@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
             keyConcepts,
             sectionSummaries: summaries,
           }),
-          12000,
+          50000,
         );
 
         send({ type: "scenario", data: setup.scenario });

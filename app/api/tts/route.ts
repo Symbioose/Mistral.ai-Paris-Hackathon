@@ -4,6 +4,10 @@ import { EMOTION_PARAMS, VOICE_MAP } from "@/app/lib/voice/voices";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5";
+const FIXED_NARRATOR_VOICE_ID =
+  process.env.ELEVENLABS_VOICE_NARRATOR_FIXED ||
+  process.env.ELEVENLABS_VOICE_CALM_NARRATOR ||
+  VOICE_MAP.calm_narrator;
 
 function sanitizeText(text: string): string {
   const cleaned = text
@@ -57,7 +61,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Text is empty." }, { status: 400 });
   }
 
-  const resolvedVoice = voice_id || (voice_type ? VOICE_MAP[voice_type] : VOICE_MAP.calm_narrator);
+  const resolvedVoice =
+    voice_type === "calm_narrator"
+      ? FIXED_NARRATOR_VOICE_ID
+      : (voice_id || (voice_type ? VOICE_MAP[voice_type] : VOICE_MAP.calm_narrator));
   const params = EMOTION_PARAMS[emotion || "calm"];
 
   const response = await fetchWithTimeout(

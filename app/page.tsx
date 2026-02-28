@@ -308,17 +308,25 @@ export default function Home() {
           audioRef.current = audio;
 
           await new Promise<void>((resolve) => {
-            audio.onended = () => {
+            let settled = false;
+            const finish = () => {
+              if (settled) return;
+              settled = true;
               URL.revokeObjectURL(audioUrl);
               resolve();
+            };
+            audio.onended = () => {
+              finish();
             };
             audio.onerror = () => {
-              URL.revokeObjectURL(audioUrl);
-              resolve();
+              finish();
+            };
+            audio.onpause = () => {
+              // Required when a new turn interrupts current audio via pause().
+              finish();
             };
             audio.play().catch(() => {
-              URL.revokeObjectURL(audioUrl);
-              resolve();
+              finish();
             });
           });
         }
@@ -452,55 +460,74 @@ export default function Home() {
       let activePatch: Record<string, unknown> = {};
       let lastTokenText = "";
       let ttsBuffer = "";
+      let suppressCurrentTurnOutput = false;
+
+      const handleSseBlock = (block: string) => {
+        const dataMatch = block.match(/^data: (.+)$/m);
+        if (!dataMatch) return;
+
+        try {
+          const event = JSON.parse(dataMatch[1]);
+
+          if (event.type === "meta") {
+            activePatch = event.patch || {};
+            const nextActiveId = String((activePatch as Record<string, unknown>).activeAgentId || "");
+            const autoKickoff = Boolean((activePatch as Record<string, unknown>).autoKickoff);
+            if (!isKickoff && autoKickoff && nextActiveId && nextActiveId !== baseState.activeAgentId) {
+              suppressCurrentTurnOutput = true;
+              ttsBuffer = "";
+            }
+          } else if (event.type === "token") {
+            if (suppressCurrentTurnOutput) return;
+            const tokenText = String(event.content || "");
+            const appended = tokenText.startsWith(lastTokenText)
+              ? tokenText.slice(lastTokenText.length)
+              : tokenText;
+            lastTokenText = tokenText;
+            ttsBuffer += appended;
+
+            const parsed = extractPlayableChunks(ttsBuffer);
+            ttsBuffer = parsed.remainder;
+            for (const chunk of parsed.chunks) {
+              const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
+              for (const segment of routedSegments) {
+                enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+              }
+            }
+
+            finalText = tokenText;
+            setGameState((prev) => ({ ...prev, dialogue: finalText, isGameStarted: true }));
+          } else if (event.type === "done") {
+            if (!suppressCurrentTurnOutput) {
+              finalText = event.content || finalText;
+            }
+            activePatch = event.patch || activePatch;
+          }
+        } catch {
+          // skip malformed
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n\n");
         buffer = lines.pop() || "";
 
-        for (const line of lines) {
-          const dataMatch = line.match(/^data: (.+)$/m);
-          if (!dataMatch) continue;
-
-          try {
-            const event = JSON.parse(dataMatch[1]);
-
-            if (event.type === "meta") {
-              activePatch = event.patch || {};
-            } else if (event.type === "token") {
-              const tokenText = String(event.content || "");
-              const appended = tokenText.startsWith(lastTokenText)
-                ? tokenText.slice(lastTokenText.length)
-                : tokenText;
-              lastTokenText = tokenText;
-              ttsBuffer += appended;
-
-              const parsed = extractPlayableChunks(ttsBuffer);
-              ttsBuffer = parsed.remainder;
-              for (const chunk of parsed.chunks) {
-                const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
-                for (const segment of routedSegments) {
-                  enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
-                }
-              }
-
-              finalText = tokenText;
-              // Update dialogue in real-time
-              setGameState((prev) => ({ ...prev, dialogue: finalText, isGameStarted: true }));
-            } else if (event.type === "done") {
-              finalText = event.content || finalText;
-              activePatch = event.patch || activePatch;
-            }
-          } catch {
-            // skip malformed
-          }
-        }
+        for (const line of lines) handleSseBlock(line);
       }
 
-      if (ttsBuffer.trim()) {
+      // Critical: process any trailing SSE block left in buffer when stream closes.
+      if (buffer.trim().length > 0) {
+        const trailing = buffer.split("\n\n").filter((part) => part.trim().length > 0);
+        for (const block of trailing) handleSseBlock(block);
+      }
+
+      if (!suppressCurrentTurnOutput && ttsBuffer.trim()) {
         const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
         for (const segment of routedSegments) {
           enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
@@ -530,6 +557,14 @@ export default function Home() {
       const nextTestedTopics =
         (activePatch.testedTopics as string[] | undefined) || baseState.testedTopics || [];
 
+      const assistantTurnText = suppressCurrentTurnOutput ? "" : finalText.trim();
+      const nextConversationHistory = assistantTurnText
+        ? [
+            ...updatedHistory,
+            { role: "assistant" as const, content: assistantTurnText },
+          ]
+        : [...updatedHistory];
+
       const computedNextState: MultiAgentGameState = {
         ...baseState,
         agents: nextAgents,
@@ -540,10 +575,7 @@ export default function Home() {
         triggeredEvents: nextEvents,
         chaosMode: nextChaos,
         testedTopics: nextTestedTopics,
-        conversationHistory: [
-          ...updatedHistory,
-          { role: "assistant" as const, content: finalText },
-        ],
+        conversationHistory: nextConversationHistory,
       };
 
       setMultiAgentState(computedNextState);
@@ -581,7 +613,9 @@ export default function Home() {
 
       setGameState((prev) => ({
         ...prev,
-        dialogue: finalText,
+        dialogue: suppressCurrentTurnOutput
+          ? String((activePatch as Record<string, unknown>).switchReason || prev.dialogue)
+          : finalText,
         isGameStarted: true,
         turnCount: prev.turnCount + (isKickoff ? 0 : 1),
       }));

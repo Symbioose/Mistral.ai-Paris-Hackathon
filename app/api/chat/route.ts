@@ -107,6 +107,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "No active agent available." }, { status: 400 });
   }
 
+  const safeHistory = gameState.conversationHistory
+    .filter((msg) => {
+      if (!msg || (msg.role !== "user" && msg.role !== "assistant")) return false;
+      return String(msg.content || "").trim().length > 0;
+    })
+    .slice(-20);
+
   const messages = [
     { role: "system" as const, content: activeAgentState.systemPrompt },
     { role: "system" as const, content: buildContext(gameState, turnCount, struggling) },
@@ -127,7 +134,7 @@ export async function POST(req: NextRequest) {
             },
           ]
         : []),
-    ...gameState.conversationHistory.slice(-20).map((msg) => ({
+    ...safeHistory.map((msg) => ({
       role: msg.role,
       content: msg.content,
     })),
@@ -423,7 +430,7 @@ export async function POST(req: NextRequest) {
                   ? `${helper.agent.name} prend la main pour clarifier : ${struggling.join(", ")}.`
                   : `${helper.agent.name} entre en scène pour faire avancer la simulation.`;
               patch.eventType = "new_character";
-              patch.learningMode = true;
+              patch.learningMode = struggling.length > 0;
               patch.autoKickoff = true;
               patch.triggeredEvents = [
                 ...((patch.triggeredEvents as string[] | undefined) || gameState.triggeredEvents),
