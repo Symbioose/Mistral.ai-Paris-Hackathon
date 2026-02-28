@@ -48,6 +48,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function POST(req: NextRequest) {
   const { text, voice_id, voice_type, emotion } = await req.json() as {
     text: string;
@@ -67,32 +71,73 @@ export async function POST(req: NextRequest) {
       : (voice_id || (voice_type ? VOICE_MAP[voice_type] : VOICE_MAP.calm_narrator));
   const params = EMOTION_PARAMS[emotion || "calm"];
 
-  const response = await fetchWithTimeout(
-    `https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoice}/stream`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text: cleanText,
-        model_id: ELEVENLABS_MODEL_ID,
-        voice_settings: {
-          stability: params.stability,
-          similarity_boost: params.similarity_boost,
-          style: 0.3,
-          use_speaker_boost: true,
-        },
-      }),
+  const payload = JSON.stringify({
+    text: cleanText,
+    model_id: ELEVENLABS_MODEL_ID,
+    voice_settings: {
+      stability: params.stability,
+      similarity_boost: params.similarity_boost,
+      style: 0.3,
+      use_speaker_boost: true,
     },
-    20000,
-  );
+  });
 
-  if (!response.ok) {
-    const error = await response.text();
-    return Response.json({ error }, { status: response.status });
+  const headers = {
+    "xi-api-key": ELEVENLABS_API_KEY,
+    "Content-Type": "application/json",
+    Accept: "audio/mpeg",
+  };
+
+  const streamUrl = `https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoice}/stream`;
+  const standardUrl = `https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoice}`;
+  let response: Response | null = null;
+  let lastError = "";
+
+  // Try streaming endpoint first with retries on transient conflicts/rate limits.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await fetchWithTimeout(
+      streamUrl,
+      {
+        method: "POST",
+        headers,
+        body: payload,
+      },
+      20000,
+    );
+
+    if (response.ok) break;
+    lastError = await response.text();
+    if (response.status === 409 || response.status === 429 || response.status >= 500) {
+      await sleep(220 * (attempt + 1));
+      continue;
+    }
+    break;
+  }
+
+  // Fallback to non-streaming synthesis if stream endpoint keeps conflicting.
+  if (!response?.ok) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      response = await fetchWithTimeout(
+        standardUrl,
+        {
+          method: "POST",
+          headers,
+          body: payload,
+        },
+        20000,
+      );
+      if (response.ok) break;
+      lastError = await response.text();
+      if (response.status === 409 || response.status === 429 || response.status >= 500) {
+        await sleep(260 * (attempt + 1));
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (!response?.ok) {
+    return Response.json({ error: lastError || "ElevenLabs request failed." }, { status: response?.status || 502 });
   }
 
   // Pipe the stream directly — no server-side buffering

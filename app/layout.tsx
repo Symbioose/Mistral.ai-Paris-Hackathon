@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RATP Survival — L'Odyssée Souterraine",
-  description: "Survivez dans le métro parisien un jour de grève générale. Un RPG vocal propulsé par Mistral AI.",
+  title: "RAG to RPG — Serious Game Generator",
+  description: "Transformez un document d'entreprise en simulation vocale adaptative avec évaluation des compétences.",
 };
 
 export default function RootLayout({

@@ -1,6 +1,10 @@
 import { MultiAgentGameState } from "@/app/lib/types";
 import { mistralChat } from "@/app/lib/agents/mistral-client";
 
+// High-stakes decisions (advance act, conclude, chaos) require the best model.
+const EVALUATION_MODEL =
+  process.env.MISTRAL_EVALUATION_MODEL || "mistral-large-latest";
+
 export interface EvaluationUpdate {
   score_updates: Array<{ topic: string; delta: number; reason: string }>;
   should_increase_difficulty: boolean;
@@ -46,22 +50,26 @@ export async function evaluateExchange(
   gameState: MultiAgentGameState,
 ): Promise<EvaluationUpdate> {
   const message = await mistralChat({
-    model: "mistral-small-latest",
+    model: EVALUATION_MODEL,
     messages: [
       {
         role: "system",
         content: `Tu es un evaluateur silencieux. Tu observes un echange entre un joueur et un PNJ dans une simulation de formation.
 
-Le document source couvre ces sujets : ${gameState.scores.map((s) => s.topic).join(", ")}
-Scores actuels du joueur : ${JSON.stringify(gameState.scores)}
-Acte actuel : ${gameState.currentAct}
-Nombre d'echanges : ${gameState.conversationHistory.length}
+Sujets du document : ${gameState.scores.map((s) => `${s.topic} (score: ${s.score})`).join(", ")}
+Acte actuel : ${gameState.currentAct} / ${gameState.scenario?.acts?.length || 3}
+Nombre total d'echanges : ${gameState.conversationHistory.length}
+Sujets deja testes : ${(gameState.testedTopics || []).join(", ") || "aucun"}
 
-Analyse cet echange et decide :
-1. Si le joueur a demontre ou echoue sur un concept -> mets a jour le score
-2. Si le joueur maitrise trop bien -> suggere d'augmenter la difficulte
-3. Si on doit passer a l'acte suivant
-4. Si un evenement chaos est pertinent
+REGLES DE PROGRESSION D'ACTE (should_advance_act):
+- Mets should_advance_act=true si le joueur a eu au moins 4 echanges dans l'acte ET le score moyen est >= 60
+- Mets should_advance_act=true si le joueur a eu au moins 6 echanges dans l'acte (meme avec score < 60)
+- Le but est d'avancer: la simulation ne doit PAS rester bloquee sur le meme acte
+
+REGLES DE SCORE (score_updates):
+- delta entre -10 et +10 par sujet
+- Si le joueur repond correctement: delta positif (+5 a +10)
+- Si le joueur se trompe: delta negatif (-5 a -10)
 
 Tu DOIS appeler evaluation_update.`,
       },
@@ -100,7 +108,7 @@ Tu DOIS appeler evaluation_update.`,
     ],
     toolChoice: { type: "function", function: { name: "evaluation_update" } },
     temperature: 0.2,
-    maxTokens: 450,
+    maxTokens: 600,
   });
 
   const toolCall = Array.isArray(message.tool_calls) ? message.tool_calls[0] : null;

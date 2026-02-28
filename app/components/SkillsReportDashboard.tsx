@@ -144,6 +144,9 @@ export default function SkillsReportDashboard({
   const scenarioTitle = useMultiAgent ? multiAgentState.scenario.title : null;
   const actsCompleted = useMultiAgent ? multiAgentState.currentAct : 0;
   const totalActs = useMultiAgent ? multiAgentState.scenario.acts.length : 0;
+  const executiveSummary = report?.executiveSummary || "";
+  const actionPlan7Days = report?.actionablePlan7Days || [];
+  const decisionTrace = report?.decisionTrace || [];
 
   return (
     <div
@@ -168,7 +171,7 @@ export default function SkillsReportDashboard({
               SKILL GAP REPORT
             </h1>
             <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82", marginTop: 10 }}>
-              {scenarioTitle || documentFilename || "Mode RATP Survival"}
+              {scenarioTitle || documentFilename || "Simulation de formation"}
               {useMultiAgent && ` · Acte ${actsCompleted}/${totalActs}`}
               {` · ${scores.length || trackedSkills.length || assessments.length} competences`}
             </p>
@@ -306,6 +309,17 @@ export default function SkillsReportDashboard({
           </div>
         )}
 
+        {executiveSummary && (
+          <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.08)", padding: 16, marginBottom: 16 }}>
+            <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 8px" }}>
+              Synthese executive
+            </h2>
+            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#D8E7F8", lineHeight: 1.7, margin: 0 }}>
+              {executiveSummary}
+            </p>
+          </section>
+        )}
+
         {/* ── AUTO-ANALYSIS ── */}
         {useMultiAgent && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
@@ -435,6 +449,48 @@ export default function SkillsReportDashboard({
               </section>
             )}
           </>
+        )}
+
+        {(actionPlan7Days.length > 0 || decisionTrace.length > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+            <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.05)", padding: 14 }}>
+              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 8px" }}>
+                Recommandation actionnable a 7 jours
+              </h2>
+              {actionPlan7Days.length === 0 ? (
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucun plan detaille disponible.</p>
+              ) : (
+                actionPlan7Days.slice(0, 7).map((item, idx) => (
+                  <p key={`${idx}-${item.slice(0, 12)}`} style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: "0 0 8px" }}>
+                    {idx + 1}. {item}
+                  </p>
+                ))
+              )}
+            </section>
+
+            <section style={{ border: "2px solid rgba(217,168,74,0.3)", background: "rgba(217,168,74,0.06)", padding: 14 }}>
+              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#D9A84A", margin: "0 0 8px" }}>
+                Trace decisionnelle
+              </h2>
+              {decisionTrace.length === 0 ? (
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Trace indisponible.</p>
+              ) : (
+                decisionTrace.map((entry) => (
+                  <article key={`${entry.step}-${entry.playerDecision.slice(0, 10)}`} style={{ paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid rgba(217,168,74,0.2)" }}>
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#D9A84A", margin: "0 0 4px" }}>
+                      Etape {entry.step} · {entry.skillsInvolved.join(", ") || "n/a"}
+                    </p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: "0 0 4px" }}>
+                      Decision: {entry.playerDecision}
+                    </p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#C4C0B5", margin: 0 }}>
+                      Impact: {entry.impact}
+                    </p>
+                  </article>
+                ))
+              )}
+            </section>
+          </div>
         )}
 
         {/* ── FOOTER ── */}

@@ -11,7 +11,7 @@ interface SidePanelProps {
   modeSubtitle?: string;
 }
 
-export default function SidePanel({ gameState, modeLabel = "RATP Survival", modeSubtitle = "Mistral Hackathon 2025" }: SidePanelProps) {
+export default function SidePanel({ gameState, modeLabel = "Simulation Formation", modeSubtitle = "Mistral Adaptive Engine" }: SidePanelProps) {
   return (
     <aside
       style={{
@@ -98,7 +98,7 @@ export default function SidePanel({ gameState, modeLabel = "RATP Survival", mode
             textTransform: "uppercase",
           }}
         >
-          {modeLabel} v0.2 · {modeSubtitle}
+          {modeLabel} · {modeSubtitle}
         </p>
       </div>
     </aside>

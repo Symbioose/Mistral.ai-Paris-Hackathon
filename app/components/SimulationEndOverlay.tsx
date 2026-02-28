@@ -34,6 +34,7 @@ interface SimulationEndOverlayProps {
   totalScore: number;
   conclusionType: string;
   finalMessage: string;
+  isGeneratingReport?: boolean;
   onComplete: () => void;
 }
 
@@ -41,10 +42,10 @@ export default function SimulationEndOverlay({
   totalScore,
   conclusionType,
   finalMessage,
+  isGeneratingReport = false,
   onComplete,
 }: SimulationEndOverlayProps) {
   const [typedMessage, setTypedMessage] = useState("");
-  const [progress, setProgress] = useState(0);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
@@ -67,27 +68,6 @@ export default function SimulationEndOverlay({
     }, 22);
     return () => clearInterval(interval);
   }, [finalMessage]);
-
-  // Progress bar: 0 → 100 over 5s, then call onComplete
-  useEffect(() => {
-    const start = Date.now();
-    const duration = 5200;
-    let rafId: number;
-
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      const pct = Math.min(100, Math.round((elapsed / duration) * 100));
-      setProgress(pct);
-      if (pct < 100) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        setTimeout(() => onCompleteRef.current(), 350);
-      }
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
 
   return (
     <div
@@ -236,7 +216,7 @@ export default function SimulationEndOverlay({
           </p>
         </div>
 
-        {/* Fake progress bar */}
+        {/* Manager report action */}
         <div>
           <p
             style={{
@@ -248,7 +228,9 @@ export default function SimulationEndOverlay({
               marginBottom: 8,
             }}
           >
-            Génération du rapport d&apos;évaluation...
+            {isGeneratingReport
+              ? "Generation du rapport manager..."
+              : "Pret pour le rapport manager"}
           </p>
           <div
             style={{
@@ -264,24 +246,31 @@ export default function SimulationEndOverlay({
                 left: 0,
                 top: 0,
                 bottom: 0,
-                width: `${progress}%`,
+                width: isGeneratingReport ? "72%" : "100%",
                 background: "#4A90D9",
-                transition: "width 0.08s linear",
+                transition: "width 0.2s ease-out",
               }}
             />
           </div>
-          <div
+          <button
+            onClick={() => onCompleteRef.current()}
+            disabled={isGeneratingReport}
             style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 14,
-              color: "#4A90D9",
-              textAlign: "right",
-              marginTop: 5,
-              letterSpacing: "0.05em",
+              marginTop: 16,
+              fontFamily: "'Space Mono', monospace",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "#F3F0E6",
+              background: isGeneratingReport ? "rgba(74,144,217,0.35)" : "#4A90D9",
+              border: "2px solid #4A90D9",
+              padding: "10px 18px",
+              cursor: isGeneratingReport ? "not-allowed" : "pointer",
             }}
           >
-            {progress}%
-          </div>
+            {isGeneratingReport ? "Generation..." : "Voir le rapport manager"}
+          </button>
         </div>
       </div>
     </div>

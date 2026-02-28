@@ -1,5 +1,5 @@
 // ============================================
-// RATP Survival - Game Types & Constants
+// Serious Game - Game Types & Constants
 // ============================================
 
 export interface InventoryItem {
@@ -81,6 +81,15 @@ export interface SimulationReport {
   skills: SkillReportEntry[];
   topCriticalGaps: CriticalGap[];
   recommendations: SkillRecommendation[];
+  executiveSummary?: string;
+  actionablePlan7Days?: string[];
+  decisionTrace?: Array<{
+    step: number;
+    situation: string;
+    playerDecision: string;
+    impact: string;
+    skillsInvolved: string[];
+  }>;
 }
 
 // Function call types from Mistral
@@ -194,9 +203,46 @@ export interface MultiAgentGameState {
   playerActions: string[];
   scores: Array<{ topic: string; score: number; weight: number }>;
   totalScore: number;
-  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  conversationHistory: Array<{
+    role: "user" | "assistant";
+    content: string;
+    agentId?: string;
+  }>;
   triggeredEvents: string[];
   chaosMode: boolean;
   /** Topics already tested via check_knowledge — agents must not repeat them. */
   testedTopics: string[];
+}
+
+// ============================================
+// Mission Feed (Live orchestration terminal)
+// ============================================
+
+export type FeedItemType =
+  | "agent_switch"
+  | "knowledge_check"
+  | "score_change"
+  | "act_transition"
+  | "event_triggered"
+  | "eval_decision"
+  | "emotion_change"
+  | "learning_mode";
+
+export interface MissionFeedItem {
+  id: string;
+  type: FeedItemType;
+  timestamp: number;
+  agentName?: string;
+  fromAgent?: string;
+  toAgent?: string;
+  reason?: string;
+  topic?: string;
+  wasCorrect?: boolean;
+  scoreDelta?: number;
+  newScore?: number;
+  actNumber?: number;
+  actTitle?: string;
+  eventType?: string;
+  emotion?: string;
+  detail?: string;
 }

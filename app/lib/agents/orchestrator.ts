@@ -17,6 +17,21 @@ const ORCHESTRATION_MODEL =
   process.env.MISTRAL_ORCHESTRATION_MODEL || "mistral-large-latest";
 
 // ---------------------------------------------------------------------------
+// Complexity assessment — drives elastic agent/act count
+// ---------------------------------------------------------------------------
+
+function assessComplexity(
+  keyConcepts: string[],
+  sectionSummaries: string[],
+): "simple" | "standard" | "complex" {
+  const c = keyConcepts.length;
+  const s = sectionSummaries.length;
+  if (c <= 4 && s <= 2) return "simple";
+  if (c >= 8 || s >= 6) return "complex";
+  return "standard";
+}
+
+// ---------------------------------------------------------------------------
 // JSON extraction helpers
 // ---------------------------------------------------------------------------
 
@@ -55,7 +70,7 @@ function sanitizeSetup(setup: SetupSimulationToolOutput): SimulationSetup {
         "Vous prenez votre poste dans une situation instable.",
     ),
     acts: Array.isArray(setup.scenario?.acts)
-      ? setup.scenario.acts.slice(0, 3).map((act, index) => ({
+      ? setup.scenario.acts.slice(0, 5).map((act, index) => ({
           act_number: Number(act.act_number || index + 1),
           title: String(act.title || `Acte ${index + 1}`),
           description: String(act.description || "Acte de simulation"),
@@ -208,36 +223,48 @@ export function fallbackSimulationSetup(input: DocumentAnalysisInput): Simulatio
 // model knows exactly what to produce without function-calling overhead.
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(): string {
-  return `Tu es un game designer expert en serious games de formation professionnelle.
+function buildSystemPrompt(complexity: "simple" | "standard" | "complex"): string {
+  const agentRule =
+    complexity === "simple"
+      ? 'EXACTEMENT 1 agent dans le tableau "agents"'
+      : complexity === "standard"
+        ? 'EXACTEMENT 2 agents dans le tableau "agents"'
+        : 'ENTRE 3 ET 5 agents dans le tableau "agents"';
 
-Génère UNIQUEMENT du JSON valide (aucun markdown, aucun backtick, aucun texte avant ou après).
+  const actRule =
+    complexity === "simple"
+      ? 'EXACTEMENT 1 acte dans "acts" (act_number: 1 uniquement)'
+      : complexity === "standard"
+        ? 'EXACTEMENT 2 actes dans "acts" (act_number 1 et 2)'
+        : 'EXACTEMENT 3 actes dans "acts" (act_number 1, 2, 3)';
 
-Le JSON doit respecter EXACTEMENT ce schéma :
+  return `Tu es un concepteur de simulations immersives pour la formation professionnelle.
+
+Genere UNIQUEMENT du JSON valide (aucun markdown, aucun backtick, aucun texte avant ou apres).
+
+Le JSON doit respecter EXACTEMENT ce schema :
 
 {
   "scenario": {
-    "title": "Titre court du scénario (max 60 caractères)",
-    "setting": "Description du cadre (1-2 phrases)",
-    "initial_situation": "Situation de départ du joueur (1-2 phrases)",
+    "title": "Titre court du scenario (max 60 caracteres)",
+    "setting": "Description du cadre professionnel (1-2 phrases)",
+    "initial_situation": "Situation de depart concrete du joueur (1-2 phrases)",
     "acts": [
       {
         "act_number": 1,
         "title": "Titre de l'acte",
-        "description": "Résumé de l'acte (1 phrase)",
-        "key_challenge": "Défi principal à relever",
-        "trigger_condition": "Ce qui fait avancer au prochain acte"
-      },
-      { "act_number": 2, "title": "...", "description": "...", "key_challenge": "...", "trigger_condition": "..." },
-      { "act_number": 3, "title": "...", "description": "...", "key_challenge": "...", "trigger_condition": "..." }
+        "description": "Resume de l'acte (1 phrase)",
+        "key_challenge": "Situation concrete et specifique que le joueur doit gerer",
+        "trigger_condition": "Action ou decision precise du joueur qui valide cet acte"
+      }
     ]
   },
   "agents": [
     {
       "id": "identifiant_snake_case",
-      "name": "Prénom Nom",
+      "name": "Prenom Nom",
       "role": "Titre professionnel",
-      "personality": "Description de la personnalité (1 phrase)",
+      "personality": "Description de la personnalite (1 phrase)",
       "voice_type": "authoritative_male",
       "motivation": "Ce que ce personnage veut obtenir",
       "knowledge_topics": ["sujet1", "sujet2", "sujet3"],
@@ -246,21 +273,36 @@ Le JSON doit respecter EXACTEMENT ce schéma :
     }
   ],
   "evaluation_grid": [
-    { "topic": "Compétence évaluée 1", "weight": 5, "test_method": "Comment on évalue cette compétence" },
-    { "topic": "Compétence évaluée 2", "weight": 3, "test_method": "..." },
-    { "topic": "Compétence évaluée 3", "weight": 2, "test_method": "..." }
+    { "topic": "Competence evaluee 1", "weight": 5, "test_method": "Situation concrete pour evaluer" },
+    { "topic": "Competence evaluee 2", "weight": 3, "test_method": "..." }
   ]
 }
 
-RÈGLES ABSOLUES :
-- ENTRE 2 ET 5 agents dans le tableau "agents" (choisir selon le contexte réel du document)
-- EXACTEMENT 3 actes dans "acts" (act_number 1, 2, 3)
+REGLES CRITIQUES POUR LES ACTES :
+- ${actRule}
+- Chaque acte doit etre une SITUATION DIFFERENTE, pas une etape generique (pas "Detection", "Conflit", "Resolution")
+- Chaque acte decrit un INCIDENT CONCRET different lie au document (ex: "Un fournisseur livre du materiel non conforme", "Un employe contourne la procedure de securite")
+- key_challenge doit decrire une SITUATION PRECISE avec un dilemme, pas juste "appliquer la procedure X"
+- Les actes doivent tester des COMPETENCES DIFFERENTES du document, pas les memes sous un angle different
+- trigger_condition doit etre une DECISION du joueur, pas un etat vague
+
+REGLES POUR LES AGENTS :
+- ${agentRule}
 - voice_type UNIQUEMENT parmi : authoritative_male, warm_female, stressed_young, calm_narrator, gruff_veteran
-- Les agents doivent avoir des personnalités et motivations contrastées (conflits de valeurs)
+- Les agents doivent avoir des PERSONNALITES OPPOSEES et des AVIS CONTRADICTOIRES sur comment gerer les situations
+- Chaque agent a des knowledge_topics DIFFERENTS — pas de chevauchement entre agents
+- Un agent ne couvre JAMAIS les memes sujets qu'un autre
+- intro_line doit etre une reaction a la situation, pas une presentation generique
+
+REGLES POUR LA GRILLE D'EVALUATION :
+- test_method doit decrire une MISE EN SITUATION concrete, pas "decisions sous contrainte de temps"
+- Chaque topic doit correspondre a une competence SPECIFIQUE et MESURABLE du document
+
+REGLES GENERALES :
 - Adapte tout le contenu au domaine du document fourni
-- id en snake_case minuscule, sans espaces ni caractères spéciaux
-- Pas de guillemets typographiques (utilise uniquement "), pas d'apostrophes typographiques
-- JSON pur uniquement, zéro texte hors JSON`;
+- id en snake_case minuscule, sans espaces ni caracteres speciaux
+- Pas de guillemets typographiques, pas d'apostrophes typographiques
+- JSON pur uniquement, zero texte hors JSON`;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,13 +318,17 @@ export async function orchestrateSimulation(
     `Résumé par section :\n${input.sectionSummaries.slice(0, 5).join("\n---\n")}`,
   ].join("\n\n");
 
+  const complexity = assessComplexity(input.keyConcepts, input.sectionSummaries);
+  console.log("[orchestrator] Complexité détectée:", complexity,
+    `(${input.keyConcepts.length} concepts, ${input.sectionSummaries.length} sections)`);
+
   try {
     console.log("[orchestrator] Appel Mistral JSON mode — model:", ORCHESTRATION_MODEL);
 
     const message = await mistralChat({
       model: ORCHESTRATION_MODEL,
       messages: [
-        { role: "system", content: buildSystemPrompt() },
+        { role: "system", content: buildSystemPrompt(complexity) },
         { role: "user", content: userContent },
       ],
       // No tools — pure JSON mode is more reliable for large nested structures.

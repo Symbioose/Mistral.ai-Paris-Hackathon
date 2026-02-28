@@ -13,7 +13,6 @@ import AgentGenerationView from "@/app/components/AgentGenerationView";
 import ActiveAgentDisplay from "@/app/components/ActiveAgentDisplay";
 import AgentPanel from "@/app/components/AgentPanel";
 import KnowledgeHeatmap from "@/app/components/KnowledgeHeatmap";
-import EventNotification from "@/app/components/EventNotification";
 import ObjectiveHUD from "@/app/components/ObjectiveHUD";
 import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
 import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
@@ -37,46 +36,42 @@ async function buildAgentPromptClient(
 
   return `Tu es ${agent.name}, ${agent.role}.
 
-## Ta personnalité
-${agent.personality}
+INTERDICTION DE NARRATION : Tu n'es pas un narrateur de RPG. Tu es une vraie personne, en face du joueur, dans le monde de l'entreprise. Ne decris JAMAIS le decor, le contexte ou l'environnement.
 
-## Ta motivation
-${agent.motivation}
+REGLE ABSOLUE : Tes repliques doivent faire 15 MOTS MAXIMUM. Une phrase courte d'affirmation, suivie d'une question directe. C'est tout. Sois punchy, presse, et va droit au but.
 
-## Ta relation avec le joueur
-${agent.relationship_to_player}
+EXEMPLE OK : "Salut, j'ai oublie mon badge, tu peux me tenir la porte ?"
+EXEMPLE INTERDIT : "Bonjour, je suis le livreur. Je suis devant la porte avec des cartons lourds."
 
-## Le contexte
-${scenario.setting}
-${scenario.initial_situation}
+## Ton personnage
+Personnalite: ${agent.personality}
+Motivation: ${agent.motivation}
+Relation avec le joueur: ${agent.relationship_to_player}
+IMPORTANT: Ton ton et tes demandes doivent correspondre strictement a ton role professionnel (${agent.role}).
 
-## Tes collègues dans cette simulation
-${otherAgents || "Tu es seul pour l'instant."}
-Utilise switch_agent avec leur id exact pour leur passer la parole quand la situation le justifie.
+## Contexte
+${scenario.setting} ${scenario.initial_situation}
 
-## Tes connaissances (extraites du document de formation)
+## Collegues
+${otherAgents || "Tu es seul."}
+
+## Connaissances (du document de formation)
 ${relevantKnowledge.join("\n---\n")}
 
-## Règles de jeu
-- Tu restes TOUJOURS dans ton personnage.
-- Tu ne révèles JAMAIS que tu es une IA ou que c'est une simulation.
-- Tes réponses sont courtes (2-3 phrases max) pour garder le rythme vocal.
-- Tu utilises les connaissances du document naturellement, comme si c'était ton expertise.
-- Si le joueur dit quelque chose de faux, tu réagis selon ta personnalité (corriger, t'énerver, exploiter).
-- Utilise switch_agent quand un collègue intervient naturellement.
+## COMMENT INTERAGIR
+- Replique ultra-courte, 15 mots max.
+- Une affirmation, puis une question directe.
+- Si correct: passe au sujet suivant immediatement.
+- Si faux: corrige en une phrase courte, puis repose autrement.
 
-## Format de réponse STRICT
-- Uniquement ce que tu DIS à voix haute.
-- Les elements de contexte/didascalies doivent etre UNIQUEMENT entre *asterisques simples*.
-- Jamais de contexte en parenthèses.
-- Le dialogue parle reste hors asterisques.
-- TERMINE TOUJOURS par une question directe ou un défi concret au joueur.`;
+## REGLE FINALE
+15 mots max. Une affirmation courte puis une question directe.`;
 }
 
 function extractPlayableChunks(
   buffer: string,
-  minChars = 140,
-  maxChars = 280,
+  minChars = 30,
+  maxChars = 140,
 ): { chunks: string[]; remainder: string } {
   const chunks: string[] = [];
   let rest = buffer;
@@ -195,6 +190,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
   const [assessments, setAssessments] = useState<ManagerAssessment[]>([]);
   const [latestReport, setLatestReport] = useState<SimulationReport | null>(null);
+  const [isGeneratingManagerReport, setIsGeneratingManagerReport] = useState(false);
   const [isReportVisible, setIsReportVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [speakerName, setSpeakerName] = useState("Maître du Jeu");
@@ -206,7 +202,6 @@ export default function Home() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const isRecordingRef = useRef(false);
-  const isDocumentMode = !!documentFilename;
   const ttsQueueRef = useRef<Array<{ id: string; text: string; voiceType: string; emotion: string; generation: number }>>([]);
   const isTtsPlayingRef = useRef(false);
   const ttsGenerationRef = useRef(0);
@@ -261,18 +256,27 @@ export default function Home() {
   }, []);
 
   const fetchTtsAudioUrl = useCallback(async (chunk: { id: string; text: string; voiceType: string; emotion: string; generation: number }) => {
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: chunk.text, voice_type: chunk.voiceType, emotion: chunk.emotion }),
-      });
-      if (!res.ok) return null;
-      const blob = await res.blob();
-      return URL.createObjectURL(blob);
-    } catch {
-      return null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: chunk.text, voice_type: chunk.voiceType, emotion: chunk.emotion }),
+        });
+        if (!res.ok) {
+          if (res.status === 409 || res.status === 429 || res.status >= 500) {
+            await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+            continue;
+          }
+          return null;
+        }
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+      }
     }
+    return null;
   }, []);
 
   const getOrCreateTtsPromise = useCallback((chunk: { id: string; text: string; voiceType: string; emotion: string; generation: number }) => {
@@ -299,22 +303,12 @@ export default function Home() {
       };
 
       let currentChunk = popNextChunk();
-      let currentFetchPromise: Promise<string | null> = currentChunk ? getOrCreateTtsPromise(currentChunk) : Promise.resolve(null);
 
       while (true) {
-        if (!currentChunk) {
-          currentChunk = popNextChunk();
-          if (!currentChunk) break;
-          currentFetchPromise = getOrCreateTtsPromise(currentChunk);
-        }
+        if (!currentChunk) break;
         if (isRecordingRef.current) break;
 
-        const nextChunk = popNextChunk();
-        const nextFetchPromise: Promise<string | null> = nextChunk
-          ? getOrCreateTtsPromise(nextChunk)
-          : Promise.resolve(null);
-
-        const audioUrl = await currentFetchPromise;
+        const audioUrl = await getOrCreateTtsPromise(currentChunk);
         if (audioUrl) {
           if (audioRef.current) {
             audioRef.current.pause();
@@ -349,11 +343,7 @@ export default function Home() {
         if (currentChunk) {
           ttsPreloadRef.current.delete(currentChunk.id);
         }
-
-        currentChunk = nextChunk || popNextChunk();
-        currentFetchPromise = currentChunk
-          ? (nextChunk ? nextFetchPromise : getOrCreateTtsPromise(currentChunk))
-          : Promise.resolve(null);
+        currentChunk = popNextChunk();
       }
     } finally {
       isTtsPlayingRef.current = false;
@@ -374,9 +364,8 @@ export default function Home() {
       generation,
     };
     ttsQueueRef.current.push(chunk);
-    void getOrCreateTtsPromise(chunk);
     void processTtsQueue();
-  }, [getOrCreateTtsPromise, processTtsQueue]);
+  }, [processTtsQueue]);
 
   const applyActions = useCallback((actions: GameAction[]) => {
     const nextAssessments = actions
@@ -496,6 +485,9 @@ export default function Home() {
           } else if (event.type === "token") {
             if (suppressCurrentTurnOutput) return;
             const tokenText = String(event.content || "");
+            if (lastTokenText && tokenText.length < lastTokenText.length) {
+              return;
+            }
             const appended = tokenText.startsWith(lastTokenText)
               ? tokenText.slice(lastTokenText.length)
               : tokenText;
@@ -577,7 +569,7 @@ export default function Home() {
       const nextConversationHistory = assistantTurnText
         ? [
             ...updatedHistory,
-            { role: "assistant" as const, content: assistantTurnText },
+            { role: "assistant" as const, content: assistantTurnText, agentId: speakingAgentId },
           ]
         : [...updatedHistory];
 
@@ -658,6 +650,7 @@ export default function Home() {
           : "",
       });
 
+
       setGameState((prev) => ({
         ...prev,
         dialogue: suppressCurrentTurnOutput
@@ -670,6 +663,7 @@ export default function Home() {
       // Handle agent switch notification + schedule auto-kickoff for the new agent.
       const switchHappened = nextActiveId !== speakingAgentId;
       if (switchHappened) {
+        const shouldAutoKickoff = Boolean((activePatch as Record<string, unknown>).autoKickoff);
         const switchReason = String(
           (activePatch as Record<string, unknown>).switchReason || "",
         );
@@ -684,7 +678,7 @@ export default function Home() {
           ]);
         }
         // Schedule the new agent's intro — fires when isLoading drops to false.
-        if (!isKickoff) {
+        if (!isKickoff && shouldAutoKickoff) {
           autoKickoffStateRef.current = computedNextState;
         }
       }
@@ -750,7 +744,7 @@ export default function Home() {
       // Document mode → go to orchestration
       setScreenPhase("orchestrating");
     } else {
-      // Default RATP mode → legacy single-agent
+      // Fallback mode → legacy single-agent
       setMultiAgentState(null);
       setScreenPhase("game");
       // We need to trigger sendAction after state updates
@@ -854,12 +848,54 @@ export default function Home() {
   }, []);
 
   const handleFinishSimulation = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    const run = async () => {
+      if (isGeneratingManagerReport) return;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+
+      if (multiAgentState) {
+        setIsGeneratingManagerReport(true);
+        try {
+          const res = await fetch("/api/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              gameState: multiAgentState,
+              assessments,
+              documentFilename,
+              documentContext,
+              finalMessage: simulationEnd?.finalMessage || "",
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.report) {
+              setLatestReport(data.report as SimulationReport);
+            }
+          }
+        } catch {
+          // Keep the flow stable: dashboard can still render from live state.
+        } finally {
+          setIsGeneratingManagerReport(false);
+        }
+      }
+
+      setIsReportVisible(true);
+    };
+
+    void run();
+  }, [assessments, documentContext, documentFilename, isGeneratingManagerReport, multiAgentState, simulationEnd?.finalMessage]);
+
+  const handleResumeCurrentTurn = useCallback(async () => {
+    if (!gameState.isGameStarted) return;
+    if (multiAgentState) {
+      await sendMultiAgentAction("", { kickoff: true, stateOverride: multiAgentState });
+      return;
     }
-    setIsReportVisible(true);
-  }, []);
+    await sendAction("");
+  }, [gameState.isGameStarted, multiAgentState, sendMultiAgentAction, sendAction]);
 
   const handleRestartSimulation = useCallback(() => {
     if (audioRef.current) {
@@ -896,6 +932,7 @@ export default function Home() {
         report={latestReport}
         documentFilename={documentFilename}
         onRestart={handleRestartSimulation}
+        multiAgentState={multiAgentState}
       />
     );
   }
@@ -977,32 +1014,6 @@ export default function Home() {
             <FileUpload onDocumentReady={handleDocumentReady} />
           </div>
 
-          {/* Skip to default RATP game */}
-          <button
-            onClick={() => {
-              sessionIdRef.current = crypto.randomUUID();
-              setGameState(INITIAL_GAME_STATE);
-              setDocumentContext(null);
-              setDocumentFilename(null);
-              setAssessments([]);
-              setLatestReport(null);
-              setIsReportVisible(false);
-              setMultiAgentState(null);
-              setScreenPhase("ready");
-            }}
-            style={{
-              fontFamily:    "'Space Mono', monospace",
-              fontSize:      9,
-              color:         "#5A5A5A",
-              background:    "transparent",
-              border:        "none",
-              cursor:        "pointer",
-              textDecoration:"underline",
-              letterSpacing: "0.1em",
-            }}
-          >
-            Passer — jouer au mode RATP Survival par défaut
-          </button>
         </div>
       </div>
     );
@@ -1034,7 +1045,7 @@ export default function Home() {
             ) : (
               <>
                 <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#5A5A5A", marginBottom: 32, lineHeight: 1.7 }}>
-                  Mode RATP Survival. Survivez dans le metro parisien un jour de greve generale.
+                  Simulation entrainement adaptative prete au lancement.
                 </p>
               </>
             )}
@@ -1077,6 +1088,7 @@ export default function Home() {
 
   // ====== GAME SCREEN ======
   const isMultiAgent = !!multiAgentState;
+  const isStalledTurn = gameState.dialogue.trim() === "..." || gameState.dialogue.toLowerCase().includes("connexion perdue");
 
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden", background: "#F3F0E6" }}>
@@ -1099,8 +1111,7 @@ export default function Home() {
           <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.7)" }} />
         </div>
 
-        {/* Event notifications — anchored inside left zone */}
-        {isMultiAgent && <EventNotification events={gameEvents} />}
+        {/* Event notifications removed — now shown in MissionFeed */}
 
         {/* ── TOP BAR ── */}
         <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: isMultiAgent ? "2px solid rgba(74,144,217,0.15)" : "2px solid rgba(255,91,34,0.15)" }}>
@@ -1108,12 +1119,12 @@ export default function Home() {
             <div style={{ width: 6, height: 32, background: isMultiAgent ? "#4A90D9" : "#FF5B22" }} />
             <div>
               <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 15, fontWeight: 700, color: "#F3F0E6", letterSpacing: "0.06em" }}>
-                {isMultiAgent ? multiAgentState.scenario.title.toUpperCase() : isDocumentMode ? "DOCUMENT SURVIVAL SIM" : "RATP SURVIVAL"}
+                {isMultiAgent ? multiAgentState.scenario.title.toUpperCase() : "SIMULATION DE FORMATION"}
               </h1>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase" }}>
                 {isMultiAgent
                   ? `Acte ${multiAgentState.currentAct} · ${multiAgentState.agents.length} agents · Mistral AI`
-                  : isDocumentMode ? "Simulation adaptative · Mistral AI" : "L&apos;Odyssee Souterraine · Mistral AI"}
+                  : "Simulation adaptative · Mistral AI"}
               </p>
             </div>
           </div>
@@ -1135,6 +1146,28 @@ export default function Home() {
                 }}
               >
                 Terminer la simulation
+              </button>
+            )}
+            {gameState.isGameStarted && !gameState.isGameOver && (
+              <button
+                onClick={handleResumeCurrentTurn}
+                disabled={isLoading}
+                style={{
+                  fontFamily: "'Space Mono', monospace",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  background: isStalledTurn ? (isMultiAgent ? "rgba(74,144,217,0.14)" : "rgba(255,91,34,0.14)") : "transparent",
+                  color: isMultiAgent ? "#4A90D9" : "#FF5B22",
+                  border: `1px solid ${isMultiAgent ? "#4A90D9" : "#FF5B22"}`,
+                  padding: "6px 10px",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  opacity: isLoading ? 0.55 : 1,
+                }}
+                title="Relance le tour courant sans redémarrer la simulation"
+              >
+                Reprendre le tour
               </button>
             )}
             {gameState.isGameStarted && (
@@ -1207,10 +1240,10 @@ export default function Home() {
           {!isMultiAgent && !gameState.isGameStarted && !isLoading && (
             <div className="animate-fade-in" style={{ textAlign: "center", padding: 32 }}>
               <div style={{ fontFamily: "'VT323', monospace", fontSize: 64, color: "#FF5B22", lineHeight: 1, marginBottom: 8 }}>
-                METRO
+                BRIEFING
               </div>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 32 }}>
-                Greve Generale — Jour J
+                Simulation de crise — Session live
               </div>
 
               <div
@@ -1223,10 +1256,10 @@ export default function Home() {
                 }}
               >
                 <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#C4C0B5", lineHeight: 1.7 }}>
-                  Chatelet-Les Halles, 08h43.<br />
-                  Greve totale. Portiques en feu.<br />
-                  Votre Pass Navigo est perime.<br />
-                  <span style={{ color: "#FF5B22" }}>Bonne chance.</span>
+                  Situation initiale chargee.<br />
+                  Informations incomplètes, pression elevee.<br />
+                  Votre role: prendre les bonnes decisions.<br />
+                  <span style={{ color: "#FF5B22" }}>Execution immediate.</span>
                 </p>
               </div>
 
@@ -1249,7 +1282,7 @@ export default function Home() {
                 onMouseEnter={(e) => { (e.target as HTMLButtonElement).style.boxShadow = "2px 2px 0 #CC4919"; (e.target as HTMLButtonElement).style.transform = "translate(2px,2px)"; }}
                 onMouseLeave={(e) => { (e.target as HTMLButtonElement).style.boxShadow = "4px 4px 0 #CC4919"; (e.target as HTMLButtonElement).style.transform = "translate(0,0)"; }}
               >
-                Entrer dans le Metro
+                Entrer dans la simulation
               </button>
             </div>
           )}
@@ -1267,7 +1300,7 @@ export default function Home() {
                 ))}
               </div>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.15em" }}>
-                {isMultiAgent ? "CONNEXION AUX AGENTS..." : isDocumentMode ? "INITIALISATION DE LA SIMULATION ADAPTATIVE..." : "CONNEXION AU RESEAU RATP..."}
+                {isMultiAgent ? "CONNEXION AUX AGENTS..." : "INITIALISATION DE LA SIMULATION ADAPTATIVE..."}
               </p>
             </div>
           )}
@@ -1288,7 +1321,7 @@ export default function Home() {
                   GAME OVER
                 </div>
                 <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#5A5A5A", marginBottom: 28 }}>
-                  {isMultiAgent ? "La simulation est terminée." : "Le metro parisien a eu raison de vous."}
+                  {isMultiAgent ? "La simulation est terminée." : "Session interrompue. Reprenez une simulation."}
                 </p>
                 <button
                   onClick={handleRestartSimulation}
@@ -1386,8 +1419,8 @@ export default function Home() {
         ) : (
           <SidePanel
             gameState={gameState}
-            modeLabel={isDocumentMode ? "Document Simulation" : "RATP Survival"}
-            modeSubtitle={isDocumentMode ? "Mistral Adaptive Engine" : "Mistral Hackathon 2025"}
+            modeLabel={"Simulation Formation"}
+            modeSubtitle={"Mistral Adaptive Engine"}
           />
         )}
       </div>
@@ -1407,6 +1440,7 @@ export default function Home() {
           totalScore={simulationEnd.totalScore}
           conclusionType={simulationEnd.conclusionType}
           finalMessage={simulationEnd.finalMessage}
+          isGeneratingReport={isGeneratingManagerReport}
           onComplete={handleFinishSimulation}
         />
       )}

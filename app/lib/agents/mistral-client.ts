@@ -11,6 +11,8 @@ interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
   tool_calls?: unknown;
+  tool_call_id?: string;
+  name?: string;
 }
 
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
