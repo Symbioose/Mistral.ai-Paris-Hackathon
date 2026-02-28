@@ -1,26 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=VT323&display=swap');
 @import "tailwindcss";
 
+/* ===== MISTRAL DA - NEO-BRUTALISME RETRO-COMPUTING ===== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:         #F3F0E6;
+  --bg-dark:    #E8E4D9;
+  --fg:         #1A1A1A;
+  --fg-muted:   #5A5A5A;
+  --accent:     #FF5B22;
+  --accent-dim: #CC4919;
+  --border:     #1A1A1A;
+  --success:    #2D7A3A;
+  --danger:     #CC2A2A;
+  --white:      #FAFAF7;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --font-sans: 'Space Mono', monospace;
+  --font-mono: 'Space Mono', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ===== BASE ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Space Mono', monospace;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ===== SCROLLBAR RETRO ===== */
+::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-dark); }
+::-webkit-scrollbar-thumb { background: var(--fg); }
+
+/* ===== ANIMATIONS ===== */
+
+/* Shake on damage */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15%       { transform: translateX(-6px); }
+  30%       { transform: translateX(5px); }
+  45%       { transform: translateX(-4px); }
+  60%       { transform: translateX(3px); }
+  75%       { transform: translateX(-2px); }
+  90%       { transform: translateX(1px); }
+}
+.animate-shake { animation: shake 0.45s ease-in-out; }
+
+/* Item appear */
+@keyframes item-appear {
+  0%   { transform: scale(0) rotate(-12deg); opacity: 0; }
+  65%  { transform: scale(1.15) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+.animate-item-appear { animation: item-appear 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Dice appear */
+@keyframes dice-appear {
+  0%   { transform: translateY(-8px) scale(0.85); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.animate-dice-appear { animation: dice-appear 0.25s ease-out; }
+
+/* Critical hit */
+@keyframes crit {
+  0%, 100% { box-shadow: 2px 2px 0 var(--fg); }
+  50%       { box-shadow: 4px 4px 0 var(--accent), 0 0 20px rgba(255,91,34,0.4); }
+}
+.animate-crit { animation: crit 0.6s ease-in-out 3; }
+
+/* Sound wave bars */
+@keyframes soundwave {
+  0%, 100% { transform: scaleY(0.2); }
+  50%       { transform: scaleY(1); }
+}
+.animate-soundwave {
+  animation: soundwave 0.5s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.animate-blink { animation: blink 0.7s step-end infinite; }
+
+/* Scanline */
+@keyframes scanline {
+  0%   { transform: translateY(-10px); opacity: 0.03; }
+  50%  { opacity: 0.06; }
+  100% { transform: translateY(100vh); opacity: 0.03; }
+}
+.animate-scanline { animation: scanline 6s linear infinite; }
+
+/* Fade in */
+@keyframes fade-in {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.4s ease-out; }
+
+/* Retro flicker */
+@keyframes flicker {
+  0%, 95%, 100% { opacity: 1; }
+  96%            { opacity: 0.85; }
+  97%            { opacity: 1; }
+  98%            { opacity: 0.9; }
+}
+.animate-flicker { animation: flicker 8s ease-in-out infinite; }
+
+/* Pulse for recording */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);    opacity: 0.6; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+.animate-pulse-ring { animation: pulse-ring 1.2s ease-out infinite; }
+
+/* Game over */
+@keyframes game-over-flash {
+  0%, 100% { color: var(--danger); }
+  50%       { color: #FF6B6B; }
+}
+.animate-game-over { animation: game-over-flash 1.5s ease-in-out infinite; }
+
+/* HP bar damage flash */
+@keyframes damage-flash {
+  0%, 100% { background: transparent; }
+  30%       { background: rgba(204, 42, 42, 0.15); }
+}
+.animate-damage { animation: damage-flash 0.5s ease-out; }
