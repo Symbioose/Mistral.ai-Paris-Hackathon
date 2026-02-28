@@ -7,9 +7,11 @@ import DiceLog from "./DiceLog";
 
 interface SidePanelProps {
   gameState: GameState;
+  modeLabel?: string;
+  modeSubtitle?: string;
 }
 
-export default function SidePanel({ gameState }: SidePanelProps) {
+export default function SidePanel({ gameState, modeLabel = "RATP Survival", modeSubtitle = "Mistral Hackathon 2025" }: SidePanelProps) {
   return (
     <aside
       style={{
@@ -96,7 +98,7 @@ export default function SidePanel({ gameState }: SidePanelProps) {
             textTransform: "uppercase",
           }}
         >
-          RATP Survival v0.2 · Mistral Hackathon 2025
+          {modeLabel} v0.2 · {modeSubtitle}
         </p>
       </div>
     </aside>

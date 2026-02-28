@@ -1,15 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE } from "@/app/lib/types";
+import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport } from "@/app/lib/types";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
 import PushToTalk from "@/app/components/PushToTalk";
 import TextInput from "@/app/components/TextInput";
 import FileUpload from "@/app/components/FileUpload";
+import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
+  const [assessments, setAssessments] = useState<ManagerAssessment[]>([]);
+  const [latestReport, setLatestReport] = useState<SimulationReport | null>(null);
+  const [isReportVisible, setIsReportVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [speakerName, setSpeakerName] = useState("Maître du Jeu");
   const [speakerType, setSpeakerType] = useState<"narrator" | "npc">("narrator");
@@ -21,6 +25,8 @@ export default function Home() {
   const [screenPhase, setScreenPhase] = useState<"upload" | "ready" | "game">("upload");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
+  const isRecordingRef = useRef(false);
+  const isDocumentMode = !!documentFilename;
 
   useEffect(() => {
     const has = typeof window !== "undefined"
@@ -29,6 +35,7 @@ export default function Home() {
   }, []);
 
   const playAudio = useCallback((b64: string) => {
+    if (isRecordingRef.current) return;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
     audioRef.current = audio;
@@ -36,6 +43,13 @@ export default function Home() {
   }, []);
 
   const applyActions = useCallback((actions: GameAction[]) => {
+    const nextAssessments = actions
+      .filter((action): action is Extract<GameAction, { type: "manager_assessment" }> => action.type === "manager_assessment")
+      .map((action) => action.assessment);
+    if (nextAssessments.length > 0) {
+      setAssessments((prevAssessments) => [...prevAssessments, ...nextAssessments]);
+    }
+
     setGameState((prev) => {
       let next = { ...prev };
       for (const action of actions) {
@@ -79,33 +93,85 @@ export default function Home() {
           documentContext,
         }),
       });
-      const data: GameResponse = await res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.narrative || "Erreur API game");
+      }
+      const typedData = data as GameResponse;
 
-      applyActions(data.actions);
-      setSpeakerName(data.speakerName || "Maître du Jeu");
-      setSpeakerType(data.speakerType || "narrator");
-      setGameState((prev) => ({ ...prev, dialogue: data.narrative, turnCount: prev.turnCount + 1, isGameStarted: true }));
+      applyActions(typedData.actions || []);
+      setLatestReport(typedData.report || null);
+      setSpeakerName(typedData.speakerName || "Maître du Jeu");
+      setSpeakerType(typedData.speakerType || "narrator");
+      setGameState((prev) => ({ ...prev, dialogue: typedData.narrative, turnCount: prev.turnCount + 1, isGameStarted: true }));
       setScreenPhase("game");
 
-      if (data.audioBase64) playAudio(data.audioBase64);
+      if (typedData.audioBase64) playAudio(typedData.audioBase64);
     } catch (e) {
       console.error("API error:", e);
       setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
     } finally {
       setIsLoading(false);
     }
-  }, [gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, applyActions, playAudio]);
+  }, [gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, documentContext, applyActions, playAudio]);
 
   const startGame = useCallback(() => {
+    // New simulation must start with a clean server conversation context.
+    sessionIdRef.current = crypto.randomUUID();
+    setGameState(INITIAL_GAME_STATE);
     setScreenPhase("game");
+    setIsReportVisible(false);
+    setAssessments([]);
+    setLatestReport(null);
     sendAction("");
   }, [sendAction]);
 
   const handleDocumentReady = useCallback((text: string, filename: string) => {
+    sessionIdRef.current = crypto.randomUUID();
+    setGameState(INITIAL_GAME_STATE);
     setDocumentContext(text);
     setDocumentFilename(filename);
     setScreenPhase("ready");
+    setAssessments([]);
+    setLatestReport(null);
+    setIsReportVisible(false);
   }, []);
+
+  const handleFinishSimulation = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsReportVisible(true);
+  }, []);
+
+  const handleRestartSimulation = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    sessionIdRef.current = crypto.randomUUID();
+    setAssessments([]);
+    setLatestReport(null);
+    setGameState(INITIAL_GAME_STATE);
+    setSpeakerName("Maître du Jeu");
+    setSpeakerType("narrator");
+    setScreenPhase("upload");
+    setDocumentContext(null);
+    setDocumentFilename(null);
+    setIsReportVisible(false);
+  }, []);
+
+  if (isReportVisible) {
+    return (
+      <SkillsReportDashboard
+        assessments={assessments}
+        report={latestReport}
+        documentFilename={documentFilename}
+        onRestart={handleRestartSimulation}
+      />
+    );
+  }
 
   // ====== UPLOAD SCREEN ======
   if (screenPhase === "upload") {
@@ -186,7 +252,16 @@ export default function Home() {
 
           {/* Skip to default RATP game */}
           <button
-            onClick={() => { setDocumentContext(null); setDocumentFilename(null); setScreenPhase("ready"); }}
+            onClick={() => {
+              sessionIdRef.current = crypto.randomUUID();
+              setGameState(INITIAL_GAME_STATE);
+              setDocumentContext(null);
+              setDocumentFilename(null);
+              setAssessments([]);
+              setLatestReport(null);
+              setIsReportVisible(false);
+              setScreenPhase("ready");
+            }}
             style={{
               fontFamily:    "'Space Mono', monospace",
               fontSize:      9,
@@ -288,14 +363,33 @@ export default function Home() {
             <div style={{ width: 6, height: 32, background: "#FF5B22" }} />
             <div>
               <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 15, fontWeight: 700, color: "#F3F0E6", letterSpacing: "0.06em" }}>
-                RATP SURVIVAL
+                {isDocumentMode ? "DOCUMENT SURVIVAL SIM" : "RATP SURVIVAL"}
               </h1>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase" }}>
-                L&apos;Odyssee Souterraine · Mistral AI
+                {isDocumentMode ? "Simulation adaptative · Mistral AI" : "L&apos;Odyssee Souterraine · Mistral AI"}
               </p>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {gameState.isGameStarted && !gameState.isGameOver && (
+              <button
+                onClick={handleFinishSimulation}
+                style={{
+                  fontFamily: "'Space Mono', monospace",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  background: "transparent",
+                  color: "#FF5B22",
+                  border: "1px solid #FF5B22",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                Terminer la simulation
+              </button>
+            )}
             {documentFilename && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #FF5B22", padding: "3px 10px" }}>
                 <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#FF5B22", letterSpacing: "0.1em", textTransform: "uppercase" }}>
@@ -381,7 +475,7 @@ export default function Home() {
                 ))}
               </div>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.15em" }}>
-                CONNEXION AU RESEAU RATP...
+                {isDocumentMode ? "INITIALISATION DE LA SIMULATION ADAPTATIVE..." : "CONNEXION AU RESEAU RATP..."}
               </p>
             </div>
           )}
@@ -408,12 +502,15 @@ export default function Home() {
                   onClick={() => {
                     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
                     sessionIdRef.current = crypto.randomUUID();
+                    setAssessments([]);
+                    setLatestReport(null);
                     setGameState(INITIAL_GAME_STATE);
                     setSpeakerName("Maître du Jeu");
                     setSpeakerType("narrator");
                     setScreenPhase("upload");
                     setDocumentContext(null);
                     setDocumentFilename(null);
+                    setIsReportVisible(false);
                   }}
                   style={{
                     fontFamily:    "'Space Mono', monospace",
@@ -462,7 +559,17 @@ export default function Home() {
             }}
           >
             {hasMic ? (
-              <PushToTalk onSpeechResult={(t) => sendAction(t)} disabled={isLoading || gameState.isGameOver} />
+              <PushToTalk
+                onSpeechResult={(t) => sendAction(t)}
+                disabled={isLoading || gameState.isGameOver}
+                onRecordingChange={(isRecording) => {
+                  isRecordingRef.current = isRecording;
+                  if (isRecording && audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current = null;
+                  }
+                }}
+              />
             ) : (
               <TextInput onSubmit={(t) => sendAction(t)} disabled={isLoading || gameState.isGameOver} />
             )}
@@ -472,7 +579,11 @@ export default function Home() {
 
       {/* ====== SIDE PANEL (35%) ====== */}
       <div style={{ width: "35%", minWidth: 300, maxWidth: 400 }}>
-        <SidePanel gameState={gameState} />
+        <SidePanel
+          gameState={gameState}
+          modeLabel={isDocumentMode ? "Document Simulation" : "RATP Survival"}
+          modeSubtitle={isDocumentMode ? "Mistral Adaptive Engine" : "Mistral Hackathon 2025"}
+        />
       </div>
     </div>
   );

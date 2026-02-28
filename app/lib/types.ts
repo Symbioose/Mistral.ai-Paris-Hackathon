@@ -12,6 +12,9 @@ export interface InventoryItem {
 export interface DiceRoll {
   id: string;
   action: string;
+  skillId?: string;
+  skillName?: string;
+  skillEvidence?: string;
   roll: number;
   needed: number;
   success: boolean;
@@ -30,9 +33,60 @@ export interface GameState {
   currentStation: string;
 }
 
+export interface ManagerAssessment {
+  skillId?: string;
+  skillAssessed: string;
+  playerScoreChange: number;
+  managerNote: string;
+  confidence?: number;
+  failurePatterns?: string[];
+  turn: number;
+  timestamp: number;
+}
+
+export interface SkillReportEntry {
+  id: string;
+  name: string;
+  description: string;
+  criticality: "low" | "medium" | "high";
+  evidences: string[];
+  masteryScore: number;
+  confidence: number;
+  failurePatterns: string[];
+  attempts: number;
+  lastManagerNote: string;
+}
+
+export interface CriticalGap {
+  skillId: string;
+  skillName: string;
+  criticality: "low" | "medium" | "high";
+  masteryScore: number;
+  confidence: number;
+  failurePatterns: string[];
+  evidenceExcerpts: string[];
+  managerNote: string;
+}
+
+export interface SkillRecommendation {
+  skillId: string;
+  skillName: string;
+  recommendation: string;
+  priority: "high" | "medium" | "low";
+}
+
+export interface SimulationReport {
+  generatedAt: string;
+  globalWeightedScore: number;
+  skills: SkillReportEntry[];
+  topCriticalGaps: CriticalGap[];
+  recommendations: SkillRecommendation[];
+}
+
 // Function call types from Mistral
 export type GameAction =
   | { type: "update_hp"; amount: number }
+  | { type: "manager_assessment"; assessment: ManagerAssessment }
   | { type: "add_item"; item: InventoryItem }
   | { type: "remove_item"; itemId: string }
   | { type: "dice_roll"; roll: DiceRoll }
@@ -45,6 +99,7 @@ export interface GameResponse {
   audioBase64: string | null;
   speakerName: string;
   speakerType: "narrator" | "npc";
+  report?: SimulationReport;
 }
 
 // Starting inventory

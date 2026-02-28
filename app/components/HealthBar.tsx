@@ -9,14 +9,9 @@ interface HealthBarProps {
 
 export default function HealthBar({ hp, maxHp }: HealthBarProps) {
   const [displayHp, setDisplayHp] = useState(hp);
-  const [isShaking, setIsShaking] = useState(false);
   const prevHp = useRef(hp);
 
   useEffect(() => {
-    if (hp < prevHp.current) {
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
-    }
     prevHp.current = hp;
 
     const start = displayHp;
@@ -37,7 +32,7 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
   const textColor = pct > 60 ? "#2D7A3A" : pct > 30 ? "#CC7A00" : "#CC2A2A";
 
   return (
-    <div className={isShaking ? "animate-shake" : ""}>
+    <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5A5A5A", fontWeight: 700 }}>
           Points de Vie

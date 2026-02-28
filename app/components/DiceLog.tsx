@@ -68,6 +68,16 @@ export default function DiceLog({ rolls }: DiceLogProps) {
                   <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#1A1A1A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>
                     {roll.action}
                   </p>
+                  {roll.skillName && (
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#1A1A1A", marginTop: 3, opacity: 0.8 }}>
+                      Procedure: {roll.skillName} {roll.skillId ? `(${roll.skillId})` : ""}
+                    </p>
+                  )}
+                  {roll.skillEvidence && (
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      Preuve doc: {roll.skillEvidence}
+                    </p>
+                  )}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                     <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A" }}>
                       seuil {roll.needed}+

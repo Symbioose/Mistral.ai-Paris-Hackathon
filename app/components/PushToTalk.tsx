@@ -5,9 +5,10 @@ import { useCallback, useRef, useState } from "react";
 interface PushToTalkProps {
   onSpeechResult: (text: string) => void;
   disabled: boolean;
+  onRecordingChange?: (isRecording: boolean) => void;
 }
 
-export default function PushToTalk({ onSpeechResult, disabled }: PushToTalkProps) {
+export default function PushToTalk({ onSpeechResult, disabled, onRecordingChange }: PushToTalkProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,8 +44,9 @@ export default function PushToTalk({ onSpeechResult, disabled }: PushToTalkProps
     recognitionRef.current = rec;
     rec.start();
     setIsRecording(true);
+    onRecordingChange?.(true);
     setTranscript("");
-  }, [disabled]);
+  }, [disabled, onRecordingChange]);
 
   const stopRecording = useCallback(() => {
     if (recognitionRef.current) {
@@ -52,11 +54,12 @@ export default function PushToTalk({ onSpeechResult, disabled }: PushToTalkProps
       recognitionRef.current = null;
     }
     setIsRecording(false);
+    onRecordingChange?.(false);
     if (transcript.trim()) {
       onSpeechResult(transcript.trim());
       setTranscript("");
     }
-  }, [transcript, onSpeechResult]);
+  }, [transcript, onSpeechResult, onRecordingChange]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
