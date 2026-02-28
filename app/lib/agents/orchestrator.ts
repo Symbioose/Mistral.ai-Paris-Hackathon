@@ -243,17 +243,6 @@ Le JSON doit respecter EXACTEMENT ce schéma :
       "knowledge_topics": ["sujet1", "sujet2", "sujet3"],
       "intro_line": "Phrase d'introduction du personnage (sans apostrophe typographique)",
       "relationship_to_player": "Relation avec le joueur (1 phrase)"
-    },
-    {
-      "id": "deuxieme_agent_id",
-      "name": "Prénom Nom",
-      "role": "Titre professionnel",
-      "personality": "Personnalité différente du premier agent",
-      "voice_type": "warm_female",
-      "motivation": "Motivation différente, potentiellement en tension",
-      "knowledge_topics": ["sujet1", "sujet2"],
-      "intro_line": "Phrase d'introduction (sans apostrophe typographique)",
-      "relationship_to_player": "Relation avec le joueur"
     }
   ],
   "evaluation_grid": [
@@ -264,10 +253,10 @@ Le JSON doit respecter EXACTEMENT ce schéma :
 }
 
 RÈGLES ABSOLUES :
-- EXACTEMENT 2 agents dans le tableau "agents"
+- ENTRE 2 ET 5 agents dans le tableau "agents" (choisir selon le contexte réel du document)
 - EXACTEMENT 3 actes dans "acts" (act_number 1, 2, 3)
 - voice_type UNIQUEMENT parmi : authoritative_male, warm_female, stressed_young, calm_narrator, gruff_veteran
-- Les 2 agents ont des personnalités et motivations contrastées (conflit de valeurs)
+- Les agents doivent avoir des personnalités et motivations contrastées (conflits de valeurs)
 - Adapte tout le contenu au domaine du document fourni
 - id en snake_case minuscule, sans espaces ni caractères spéciaux
 - Pas de guillemets typographiques (utilise uniquement "), pas d'apostrophes typographiques
