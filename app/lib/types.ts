@@ -132,3 +132,71 @@ export const INITIAL_GAME_STATE: GameState = {
   turnCount: 0,
   currentStation: "Châtelet-Les Halles",
 };
+
+// ============================================
+// Multi-Agent System Types
+// ============================================
+
+export type VoiceType = "authoritative_male" | "warm_female" | "stressed_young" | "calm_narrator" | "gruff_veteran";
+
+export type AgentEmotion = "calm" | "stressed" | "angry" | "panicked" | "suspicious";
+
+export interface Agent {
+  id: string;
+  name: string;
+  role: string;
+  personality: string;
+  voice_type: VoiceType;
+  motivation: string;
+  knowledge_topics: string[];
+  intro_line: string;
+  relationship_to_player: string;
+}
+
+export interface Scenario {
+  title: string;
+  setting: string;
+  initial_situation: string;
+  acts: Array<{
+    act_number: number;
+    title: string;
+    description: string;
+    key_challenge: string;
+    trigger_condition: string;
+  }>;
+}
+
+export interface EvaluationTopic {
+  topic: string;
+  weight: number;
+  test_method: string;
+}
+
+export interface SimulationSetup {
+  scenario: Scenario;
+  agents: Agent[];
+  evaluation_grid: EvaluationTopic[];
+}
+
+export interface AgentState {
+  agent: Agent;
+  emotion: AgentEmotion;
+  isActive: boolean;
+  systemPrompt: string;
+  interactionCount: number;
+}
+
+export interface MultiAgentGameState {
+  scenario: Scenario;
+  currentAct: number;
+  agents: AgentState[];
+  activeAgentId: string;
+  playerActions: string[];
+  scores: Array<{ topic: string; score: number; weight: number }>;
+  totalScore: number;
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  triggeredEvents: string[];
+  chaosMode: boolean;
+  /** Topics already tested via check_knowledge — agents must not repeat them. */
+  testedTopics: string[];
+}

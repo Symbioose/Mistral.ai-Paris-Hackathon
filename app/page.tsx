@@ -1,13 +1,192 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport } from "@/app/lib/types";
+import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType } from "@/app/lib/types";
+import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
 import PushToTalk from "@/app/components/PushToTalk";
 import TextInput from "@/app/components/TextInput";
 import FileUpload from "@/app/components/FileUpload";
 import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
+import AgentGenerationView from "@/app/components/AgentGenerationView";
+import ActiveAgentDisplay from "@/app/components/ActiveAgentDisplay";
+import AgentPanel from "@/app/components/AgentPanel";
+import KnowledgeHeatmap from "@/app/components/KnowledgeHeatmap";
+import EventNotification from "@/app/components/EventNotification";
+
+// Imported dynamically to avoid server-side issues
+async function buildAgentPromptClient(
+  agent: SimulationSetup["agents"][0],
+  scenario: SimulationSetup["scenario"],
+  ragIndex: RagIndex,
+  allAgents: SimulationSetup["agents"],
+) {
+  const { retrieveRelevantChunks } = await import("@/app/lib/rag");
+  const query = `${agent.role} ${agent.motivation} ${agent.knowledge_topics.join(" ")}`;
+  const retrieved = retrieveRelevantChunks(ragIndex, query, 5);
+  const relevantKnowledge = [...new Set(retrieved.map((chunk) => chunk.text))];
+
+  const otherAgents = allAgents
+    .filter((a) => a.id !== agent.id)
+    .map((a) => `- ${a.name} (${a.role}) — id: "${a.id}"`)
+    .join("\n");
+
+  return `Tu es ${agent.name}, ${agent.role}.
+
+## Ta personnalité
+${agent.personality}
+
+## Ta motivation
+${agent.motivation}
+
+## Ta relation avec le joueur
+${agent.relationship_to_player}
+
+## Le contexte
+${scenario.setting}
+${scenario.initial_situation}
+
+## Tes collègues dans cette simulation
+${otherAgents || "Tu es seul pour l'instant."}
+Utilise switch_agent avec leur id exact pour leur passer la parole quand la situation le justifie.
+
+## Tes connaissances (extraites du document de formation)
+${relevantKnowledge.join("\n---\n")}
+
+## Règles de jeu
+- Tu restes TOUJOURS dans ton personnage.
+- Tu ne révèles JAMAIS que tu es une IA ou que c'est une simulation.
+- Tes réponses sont courtes (2-3 phrases max) pour garder le rythme vocal.
+- Tu utilises les connaissances du document naturellement, comme si c'était ton expertise.
+- Si le joueur dit quelque chose de faux, tu réagis selon ta personnalité (corriger, t'énerver, exploiter).
+- Utilise switch_agent quand un collègue intervient naturellement.
+
+## Format de réponse STRICT
+- Uniquement ce que tu DIS à voix haute.
+- Les elements de contexte/didascalies doivent etre UNIQUEMENT entre *asterisques simples*.
+- Jamais de contexte en parenthèses.
+- Le dialogue parle reste hors asterisques.
+- TERMINE TOUJOURS par une question directe ou un défi concret au joueur.`;
+}
+
+function extractPlayableChunks(
+  buffer: string,
+  minChars = 140,
+  maxChars = 280,
+): { chunks: string[]; remainder: string } {
+  const chunks: string[] = [];
+  let rest = buffer;
+
+  while (rest.length >= minChars) {
+    const window = rest.slice(0, maxChars);
+    let cut = -1;
+
+    for (let i = minChars; i < window.length; i++) {
+      const ch = window[i];
+      const next = window[i + 1] || "";
+      if (/[.!?]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
+        cut = i + 1;
+      }
+    }
+
+    if (cut === -1) {
+      for (let i = minChars; i < window.length; i++) {
+        const ch = window[i];
+        const next = window[i + 1] || "";
+        if (/[,;:]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
+          cut = i + 1;
+        }
+      }
+    }
+
+    if (cut === -1 && window.length === maxChars) {
+      const spaceIdx = window.lastIndexOf(" ");
+      cut = spaceIdx > minChars ? spaceIdx : maxChars;
+    }
+
+    if (cut === -1) break;
+
+    const chunk = rest.slice(0, cut).trim();
+    if (chunk) chunks.push(chunk);
+    rest = rest.slice(cut).trimStart();
+  }
+
+  return { chunks, remainder: rest };
+}
+
+function normalizeTtsText(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function splitTtsByStageDirections(
+  text: string,
+  voiceType: string,
+  emotion: string,
+): Array<{ text: string; voiceType: string; emotion: string }> {
+  const boldStore: string[] = [];
+  const protectedText = text.replace(/\*\*([^*]+)\*\*/g, (_m, p1: string) => {
+    const idx = boldStore.push(p1) - 1;
+    return `@@BOLD_${idx}@@`;
+  });
+
+  const out: Array<{ text: string; voiceType: string; emotion: string }> = [];
+  const stageRegex = /\*([^*]+)\*/g;
+  let last = 0;
+  let match: RegExpExecArray | null = null;
+
+  const restoreAndPush = (raw: string, stage: boolean) => {
+    const restored = raw.replace(/@@BOLD_(\d+)@@/g, (_m, i: string) => boldStore[Number(i)] || "");
+    const clean = normalizeTtsText(restored);
+    if (!clean) return;
+    out.push({
+      text: clean,
+      voiceType: stage ? "calm_narrator" : voiceType,
+      emotion: stage ? "calm" : emotion,
+    });
+  };
+
+  while ((match = stageRegex.exec(protectedText)) !== null) {
+    const before = protectedText.slice(last, match.index);
+    if (before) restoreAndPush(before, false);
+    restoreAndPush(match[1] || "", true);
+    last = stageRegex.lastIndex;
+  }
+
+  const tail = protectedText.slice(last);
+  if (tail) restoreAndPush(tail, false);
+
+  return out;
+}
+
+function detectPlayerStrugglingTopics(
+  playerText: string,
+  scores: Array<{ topic: string; score: number; weight: number }>,
+): string[] {
+  const text = playerText.toLowerCase();
+  const confusionSignals = [
+    "je ne comprends pas",
+    "j'ai pas compris",
+    "explique",
+    "je suis perdu",
+    "help",
+    "aide",
+    "bloqué",
+    "bloque",
+  ];
+  const hasConfusionSignal = confusionSignals.some((signal) => text.includes(signal));
+  const lowTopics = scores.filter((s) => s.score < 45).map((s) => s.topic);
+  if (!hasConfusionSignal) return lowTopics.slice(0, 3);
+  const matches = scores
+    .filter((s) => text.includes(s.topic.toLowerCase()) || s.score < 55)
+    .map((s) => s.topic);
+  return [...new Set([...matches, ...lowTopics])].slice(0, 3);
+}
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
@@ -18,21 +197,44 @@ export default function Home() {
   const [speakerName, setSpeakerName] = useState("Maître du Jeu");
   const [speakerType, setSpeakerType] = useState<"narrator" | "npc">("narrator");
   const [hasMic, setHasMic] = useState(true);
-  // RAG context: null = no doc uploaded, string = doc text
   const [documentContext, setDocumentContext] = useState<string | null>(null);
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
-  // null = upload screen, false = game start screen, true = game running
-  const [screenPhase, setScreenPhase] = useState<"upload" | "ready" | "game">("upload");
+  const [screenPhase, setScreenPhase] = useState<"upload" | "ready" | "orchestrating" | "game">("upload");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const isRecordingRef = useRef(false);
   const isDocumentMode = !!documentFilename;
+  const ttsQueueRef = useRef<Array<{ id: string; text: string; voiceType: string; emotion: string; generation: number }>>([]);
+  const isTtsPlayingRef = useRef(false);
+  const ttsGenerationRef = useRef(0);
+  const ttsChunkSeqRef = useRef(0);
+  const ttsPreloadRef = useRef<Map<string, Promise<string | null>>>(new Map());
+
+  // Multi-agent state
+  const [multiAgentState, setMultiAgentState] = useState<MultiAgentGameState | null>(null);
+  const [gameEvents, setGameEvents] = useState<Array<{ id: string; type: string; description: string }>>([]);
+  const [learningModeState, setLearningModeState] = useState<{ active: boolean; message: string }>({
+    active: false,
+    message: "",
+  });
+  const ragIndexRef = useRef<RagIndex | null>(null);
+  // Holds the next state to use for auto-kickoff after an agent switch.
+  const autoKickoffStateRef = useRef<MultiAgentGameState | null>(null);
 
   useEffect(() => {
     const has = typeof window !== "undefined"
       && (!!window.SpeechRecognition || !!(window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
     setHasMic(has);
   }, []);
+
+  // Auto-kickoff: when a switch is scheduled and loading finishes, trigger the new agent's intro.
+  useEffect(() => {
+    if (!autoKickoffStateRef.current || isLoading) return;
+    const kickoffState = autoKickoffStateRef.current;
+    autoKickoffStateRef.current = null;
+    void sendMultiAgentAction("", { kickoff: true, stateOverride: kickoffState });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   const playAudio = useCallback((b64: string) => {
     if (isRecordingRef.current) return;
@@ -41,6 +243,116 @@ export default function Home() {
     audioRef.current = audio;
     audio.play().catch((e) => console.warn("Audio blocked:", e));
   }, []);
+
+  const fetchTtsAudioUrl = useCallback(async (chunk: { id: string; text: string; voiceType: string; emotion: string; generation: number }) => {
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: chunk.text, voice_type: chunk.voiceType, emotion: chunk.emotion }),
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const getOrCreateTtsPromise = useCallback((chunk: { id: string; text: string; voiceType: string; emotion: string; generation: number }) => {
+    const existing = ttsPreloadRef.current.get(chunk.id);
+    if (existing) return existing;
+    const created = fetchTtsAudioUrl(chunk);
+    ttsPreloadRef.current.set(chunk.id, created);
+    return created;
+  }, [fetchTtsAudioUrl]);
+
+  const processTtsQueue = useCallback(async () => {
+    if (isTtsPlayingRef.current) return;
+    isTtsPlayingRef.current = true;
+
+    try {
+      const popNextChunk = () => {
+        while (ttsQueueRef.current.length > 0) {
+          const next = ttsQueueRef.current.shift();
+          if (!next) continue;
+          if (next.generation !== ttsGenerationRef.current) continue;
+          return next;
+        }
+        return null;
+      };
+
+      let currentChunk = popNextChunk();
+      let currentFetchPromise: Promise<string | null> = currentChunk ? getOrCreateTtsPromise(currentChunk) : Promise.resolve(null);
+
+      while (true) {
+        if (!currentChunk) {
+          currentChunk = popNextChunk();
+          if (!currentChunk) break;
+          currentFetchPromise = getOrCreateTtsPromise(currentChunk);
+        }
+        if (isRecordingRef.current) break;
+
+        const nextChunk = popNextChunk();
+        const nextFetchPromise: Promise<string | null> = nextChunk
+          ? getOrCreateTtsPromise(nextChunk)
+          : Promise.resolve(null);
+
+        const audioUrl = await currentFetchPromise;
+        if (audioUrl) {
+          if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+          }
+          const audio = new Audio(audioUrl);
+          audioRef.current = audio;
+
+          await new Promise<void>((resolve) => {
+            audio.onended = () => {
+              URL.revokeObjectURL(audioUrl);
+              resolve();
+            };
+            audio.onerror = () => {
+              URL.revokeObjectURL(audioUrl);
+              resolve();
+            };
+            audio.play().catch(() => {
+              URL.revokeObjectURL(audioUrl);
+              resolve();
+            });
+          });
+        }
+        if (currentChunk) {
+          ttsPreloadRef.current.delete(currentChunk.id);
+        }
+
+        currentChunk = nextChunk || popNextChunk();
+        currentFetchPromise = currentChunk
+          ? (nextChunk ? nextFetchPromise : getOrCreateTtsPromise(currentChunk))
+          : Promise.resolve(null);
+      }
+    } finally {
+      isTtsPlayingRef.current = false;
+      if (ttsQueueRef.current.length > 0 && !isRecordingRef.current) {
+        void processTtsQueue();
+      }
+    }
+  }, [getOrCreateTtsPromise]);
+
+  const enqueueTtsSegment = useCallback((text: string, voiceType: string, emotion: string, generation: number) => {
+    const clean = text.trim();
+    if (!clean || generation !== ttsGenerationRef.current) return;
+    const chunk = {
+      id: `tts_${generation}_${++ttsChunkSeqRef.current}`,
+      text: clean,
+      voiceType,
+      emotion,
+      generation,
+    };
+    ttsQueueRef.current.push(chunk);
+    void getOrCreateTtsPromise(chunk);
+    void processTtsQueue();
+  }, [getOrCreateTtsPromise, processTtsQueue]);
 
   const applyActions = useCallback((actions: GameAction[]) => {
     const nextAssessments = actions
@@ -79,7 +391,237 @@ export default function Home() {
     });
   }, []);
 
+  // ====== MULTI-AGENT CHAT ======
+  const sendMultiAgentAction = useCallback(async (
+    playerText: string,
+    options?: { kickoff?: boolean; stateOverride?: MultiAgentGameState },
+  ) => {
+    const isKickoff = Boolean(options?.kickoff);
+    const baseState = options?.stateOverride || multiAgentState;
+    if (!baseState) return;
+    setIsLoading(true);
+
+    try {
+      const speakingAgent = baseState.agents.find((a) => a.agent.id === baseState.activeAgentId);
+      const voiceTypeForTurn = speakingAgent?.agent.voice_type || "calm_narrator";
+      const emotionForTurn = speakingAgent?.emotion || "calm";
+
+      ttsGenerationRef.current += 1;
+      const currentTtsGeneration = ttsGenerationRef.current;
+      ttsQueueRef.current = [];
+      ttsPreloadRef.current.clear();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+
+      // Update conversation history
+      const updatedHistory = [
+        ...baseState.conversationHistory,
+        ...(playerText ? [{ role: "user" as const, content: playerText }] : []),
+      ];
+
+      const stateToSend: MultiAgentGameState = {
+        ...baseState,
+        conversationHistory: updatedHistory,
+      };
+
+      const turnsWithCurrentAgent = baseState.agents.find((a) => a.agent.id === baseState.activeAgentId)?.interactionCount || 0;
+      const strugglingTopics = detectPlayerStrugglingTopics(playerText, baseState.scores);
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerMessage: playerText,
+          gameState: stateToSend,
+          kickoff: isKickoff,
+          turnsWithCurrentAgent,
+          strugglingTopics,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error("Erreur API chat");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalText = "";
+      let activePatch: Record<string, unknown> = {};
+      let lastTokenText = "";
+      let ttsBuffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const dataMatch = line.match(/^data: (.+)$/m);
+          if (!dataMatch) continue;
+
+          try {
+            const event = JSON.parse(dataMatch[1]);
+
+            if (event.type === "meta") {
+              activePatch = event.patch || {};
+            } else if (event.type === "token") {
+              const tokenText = String(event.content || "");
+              const appended = tokenText.startsWith(lastTokenText)
+                ? tokenText.slice(lastTokenText.length)
+                : tokenText;
+              lastTokenText = tokenText;
+              ttsBuffer += appended;
+
+              const parsed = extractPlayableChunks(ttsBuffer);
+              ttsBuffer = parsed.remainder;
+              for (const chunk of parsed.chunks) {
+                const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
+                for (const segment of routedSegments) {
+                  enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+                }
+              }
+
+              finalText = tokenText;
+              // Update dialogue in real-time
+              setGameState((prev) => ({ ...prev, dialogue: finalText, isGameStarted: true }));
+            } else if (event.type === "done") {
+              finalText = event.content || finalText;
+              activePatch = event.patch || activePatch;
+            }
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+
+      if (ttsBuffer.trim()) {
+        const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
+        for (const segment of routedSegments) {
+          enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+        }
+      }
+
+      // Compute next state locally so we can use it for auto-kickoff scheduling.
+      const patchAgents = (activePatch.agents as AgentStateType[] | undefined) || baseState.agents;
+      const nextActiveId = (activePatch.activeAgentId as string) || baseState.activeAgentId;
+      const nextEvents = (activePatch.triggeredEvents as string[]) || baseState.triggeredEvents;
+      const nextChaos = (activePatch.chaosMode as boolean | undefined) ?? baseState.chaosMode;
+      const nextAct = Number(activePatch.currentAct || baseState.currentAct);
+      const nextScores =
+        (activePatch.scores as MultiAgentGameState["scores"] | undefined) || baseState.scores;
+      const nextTotalScore = Number(activePatch.totalScore ?? baseState.totalScore);
+      const speakingAgentId = baseState.activeAgentId;
+
+      const nextAgents = patchAgents.map((agentState) => ({
+        ...agentState,
+        isActive: agentState.agent.id === nextActiveId,
+        interactionCount:
+          agentState.agent.id === speakingAgentId
+            ? agentState.interactionCount + (isKickoff ? 0 : 1)
+            : agentState.interactionCount,
+      }));
+
+      const nextTestedTopics =
+        (activePatch.testedTopics as string[] | undefined) || baseState.testedTopics || [];
+
+      const computedNextState: MultiAgentGameState = {
+        ...baseState,
+        agents: nextAgents,
+        activeAgentId: nextActiveId,
+        currentAct: nextAct,
+        scores: nextScores,
+        totalScore: nextTotalScore,
+        triggeredEvents: nextEvents,
+        chaosMode: nextChaos,
+        testedTopics: nextTestedTopics,
+        conversationHistory: [
+          ...updatedHistory,
+          { role: "assistant" as const, content: finalText },
+        ],
+      };
+
+      setMultiAgentState(computedNextState);
+
+      // Handle new triggered events for notifications
+      if (nextEvents.length > (baseState.triggeredEvents?.length || 0)) {
+        const latestEvent = nextEvents[nextEvents.length - 1];
+        setGameEvents((prev) => [
+          ...prev,
+          {
+            id: `evt_${Date.now()}`,
+            type: String((activePatch as Record<string, unknown>).eventType || "crisis"),
+            description: latestEvent,
+          },
+        ]);
+      }
+
+      // Speaker name = the agent who GENERATED this turn's text (not the switched-to agent).
+      const generatingAgent = baseState.agents.find((a) => a.agent.id === speakingAgentId);
+      if (generatingAgent) {
+        setSpeakerName(generatingAgent.agent.name);
+        setSpeakerType("npc");
+      }
+
+      const learningMode = Boolean((activePatch as Record<string, unknown>).learningMode);
+      setLearningModeState({
+        active: learningMode,
+        message: learningMode
+          ? String(
+              (activePatch as Record<string, unknown>).switchReason ||
+                "Un agent passe en mode apprentissage pour vous guider.",
+            )
+          : "",
+      });
+
+      setGameState((prev) => ({
+        ...prev,
+        dialogue: finalText,
+        isGameStarted: true,
+        turnCount: prev.turnCount + (isKickoff ? 0 : 1),
+      }));
+
+      // Handle agent switch notification + schedule auto-kickoff for the new agent.
+      const switchHappened = nextActiveId !== speakingAgentId;
+      if (switchHappened) {
+        const switchReason = String(
+          (activePatch as Record<string, unknown>).switchReason || "",
+        );
+        if (switchReason) {
+          setGameEvents((prev) => [
+            ...prev,
+            {
+              id: `switch_${Date.now()}`,
+              type: learningMode ? "learning" : "new_character",
+              description: switchReason,
+            },
+          ]);
+        }
+        // Schedule the new agent's intro — fires when isLoading drops to false.
+        if (!isKickoff) {
+          autoKickoffStateRef.current = computedNextState;
+        }
+      }
+    } catch (e) {
+      console.error("Multi-agent chat error:", e);
+      setGameState((prev) => ({ ...prev, dialogue: "Connexion perdue. Réessayez." }));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [multiAgentState, enqueueTtsSegment]);
+
+  // ====== LEGACY SINGLE-AGENT GAME ======
   const sendAction = useCallback(async (playerText: string) => {
+    // If in multi-agent mode, delegate
+    if (multiAgentState) {
+      return sendMultiAgentAction(playerText);
+    }
+
     setIsLoading(true);
     try {
       const res = await fetch("/api/game", {
@@ -113,18 +655,108 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, documentContext, applyActions, playAudio]);
+  }, [multiAgentState, sendMultiAgentAction, gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, documentContext, applyActions, playAudio]);
 
   const startGame = useCallback(() => {
-    // New simulation must start with a clean server conversation context.
     sessionIdRef.current = crypto.randomUUID();
     setGameState(INITIAL_GAME_STATE);
-    setScreenPhase("game");
     setIsReportVisible(false);
     setAssessments([]);
     setLatestReport(null);
-    sendAction("");
-  }, [sendAction]);
+    setGameEvents([]);
+
+    if (documentContext) {
+      // Document mode → go to orchestration
+      setScreenPhase("orchestrating");
+    } else {
+      // Default RATP mode → legacy single-agent
+      setMultiAgentState(null);
+      setScreenPhase("game");
+      // We need to trigger sendAction after state updates
+      setTimeout(() => {
+        fetch("/api/game", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerText: "",
+            turnCount: 0,
+            gameState: { hp: 100, maxHp: 100, currentStation: "Châtelet-Les Halles", inventory: INITIAL_GAME_STATE.inventory },
+            sessionId: sessionIdRef.current,
+            documentContext: null,
+          }),
+        })
+          .then((res) => res.json())
+          .then((data: GameResponse) => {
+            applyActions(data.actions || []);
+            setSpeakerName(data.speakerName || "Maître du Jeu");
+            setSpeakerType(data.speakerType || "narrator");
+            setGameState((prev) => ({ ...prev, dialogue: data.narrative, turnCount: 1, isGameStarted: true }));
+            if (data.audioBase64) playAudio(data.audioBase64);
+          })
+          .catch((e) => {
+            console.error("Init error:", e);
+            setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
+          });
+      }, 0);
+    }
+  }, [documentContext, applyActions, playAudio]);
+
+  const handleOrchestrationReady = useCallback(async (setup: SimulationSetup) => {
+    // Build RAG index from document
+    const ragIndex = buildRagIndex(documentContext || "");
+    ragIndexRef.current = ragIndex;
+
+    // Build agent prompts (each agent knows about the others)
+    const systemPrompts: Record<string, string> = {};
+    for (const agent of setup.agents) {
+      systemPrompts[agent.id] = await buildAgentPromptClient(agent, setup.scenario, ragIndex, setup.agents);
+    }
+
+    // Initialize multi-agent game state
+    const agents = setup.agents.map((agent, idx) => ({
+      agent,
+      emotion: "calm" as const,
+      isActive: idx === 0,
+      systemPrompt: systemPrompts[agent.id] || "",
+      interactionCount: 0,
+    }));
+
+    const scores = setup.evaluation_grid.map((entry) => ({
+      topic: entry.topic,
+      score: 50,
+      weight: entry.weight,
+    }));
+
+    const totalScore = scores.length > 0
+      ? Math.round(scores.reduce((acc, s) => acc + s.score * s.weight, 0) / scores.reduce((acc, s) => acc + s.weight, 0))
+      : 0;
+
+    const initialState: MultiAgentGameState = {
+      scenario: setup.scenario,
+      currentAct: 1,
+      agents,
+      activeAgentId: agents[0]?.agent.id || "",
+      playerActions: [],
+      scores,
+      totalScore,
+      conversationHistory: [],
+      triggeredEvents: [],
+      chaosMode: false,
+      testedTopics: [],
+    };
+
+    setMultiAgentState(initialState);
+    setGameState((prev) => ({ ...prev, isGameStarted: true, dialogue: "Briefing mission en cours..." }));
+    setSpeakerName("Maître du Jeu");
+    setSpeakerType("narrator");
+    setScreenPhase("game");
+
+    // Kickoff: first turn generated dynamically by active agent without user input
+    const firstAgent = agents[0];
+    if (firstAgent) {
+      await sendMultiAgentAction("", { kickoff: true, stateOverride: initialState });
+    }
+  }, [documentContext, sendMultiAgentAction]);
 
   const handleDocumentReady = useCallback((text: string, filename: string) => {
     sessionIdRef.current = crypto.randomUUID();
@@ -135,6 +767,9 @@ export default function Home() {
     setAssessments([]);
     setLatestReport(null);
     setIsReportVisible(false);
+    setMultiAgentState(null);
+    setGameEvents([]);
+    setLearningModeState({ active: false, message: "" });
   }, []);
 
   const handleFinishSimulation = useCallback(() => {
@@ -160,7 +795,14 @@ export default function Home() {
     setDocumentContext(null);
     setDocumentFilename(null);
     setIsReportVisible(false);
+    setMultiAgentState(null);
+    setGameEvents([]);
   }, []);
+
+  // Get active agent for display
+  const activeAgentState = multiAgentState?.agents.find(
+    (a) => a.agent.id === multiAgentState.activeAgentId
+  );
 
   if (isReportVisible) {
     return (
@@ -260,6 +902,7 @@ export default function Home() {
               setAssessments([]);
               setLatestReport(null);
               setIsReportVisible(false);
+              setMultiAgentState(null);
               setScreenPhase("ready");
             }}
             style={{
@@ -336,37 +979,56 @@ export default function Home() {
     );
   }
 
+  // ====== ORCHESTRATING SCREEN ======
+  if (screenPhase === "orchestrating" && documentContext && documentFilename) {
+    return (
+      <AgentGenerationView
+        documentText={documentContext}
+        filename={documentFilename}
+        onReady={handleOrchestrationReady}
+      />
+    );
+  }
+
   // ====== GAME SCREEN ======
+  const isMultiAgent = !!multiAgentState;
+
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden", background: "#F3F0E6" }}>
 
       {/* ====== ZONE IMMERSIVE (65%) ====== */}
       <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", background: "#1A1A1A" }}>
 
-        {/* Metro background — dark grain + scanlines */}
+        {/* Background */}
         <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-          {/* Base gradient */}
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(160deg, #0F0F0F 0%, #1A1A1A 40%, #0A0D0A 100%)" }} />
-          {/* Warm center glow */}
-          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 40% 60%, rgba(255,91,34,0.04) 0%, transparent 65%)" }} />
-          {/* Pillar pattern */}
-          <div style={{ position: "absolute", inset: 0, opacity: 0.035, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(255,240,230,0.8) 120px, rgba(255,240,230,0.8) 122px)" }} />
-          {/* Scanline */}
-          <div className="animate-scanline" style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: "rgba(255,91,34,0.06)" }} />
-          {/* Vignette */}
+          <div style={{ position: "absolute", inset: 0, background: isMultiAgent
+            ? "linear-gradient(160deg, #0a0a0f 0%, #0f0f1a 40%, #0a0a0f 100%)"
+            : "linear-gradient(160deg, #0F0F0F 0%, #1A1A1A 40%, #0A0D0A 100%)" }} />
+          <div style={{ position: "absolute", inset: 0, background: isMultiAgent
+            ? "radial-gradient(ellipse at 40% 60%, rgba(74,144,217,0.04) 0%, transparent 65%)"
+            : "radial-gradient(ellipse at 40% 60%, rgba(255,91,34,0.04) 0%, transparent 65%)" }} />
+          {!isMultiAgent && (
+            <div style={{ position: "absolute", inset: 0, opacity: 0.035, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(255,240,230,0.8) 120px, rgba(255,240,230,0.8) 122px)" }} />
+          )}
+          <div className="animate-scanline" style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: isMultiAgent ? "rgba(74,144,217,0.06)" : "rgba(255,91,34,0.06)" }} />
           <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.7)" }} />
         </div>
 
+        {/* Event notifications — anchored inside left zone */}
+        {isMultiAgent && <EventNotification events={gameEvents} />}
+
         {/* ── TOP BAR ── */}
-        <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "2px solid rgba(255,91,34,0.15)" }}>
+        <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: isMultiAgent ? "2px solid rgba(74,144,217,0.15)" : "2px solid rgba(255,91,34,0.15)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 6, height: 32, background: "#FF5B22" }} />
+            <div style={{ width: 6, height: 32, background: isMultiAgent ? "#4A90D9" : "#FF5B22" }} />
             <div>
               <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 15, fontWeight: 700, color: "#F3F0E6", letterSpacing: "0.06em" }}>
-                {isDocumentMode ? "DOCUMENT SURVIVAL SIM" : "RATP SURVIVAL"}
+                {isMultiAgent ? multiAgentState.scenario.title.toUpperCase() : isDocumentMode ? "DOCUMENT SURVIVAL SIM" : "RATP SURVIVAL"}
               </h1>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase" }}>
-                {isDocumentMode ? "Simulation adaptative · Mistral AI" : "L&apos;Odyssee Souterraine · Mistral AI"}
+                {isMultiAgent
+                  ? `Acte ${multiAgentState.currentAct} · ${multiAgentState.agents.length} agents · Mistral AI`
+                  : isDocumentMode ? "Simulation adaptative · Mistral AI" : "L&apos;Odyssee Souterraine · Mistral AI"}
               </p>
             </div>
           </div>
@@ -381,8 +1043,8 @@ export default function Home() {
                   letterSpacing: "0.15em",
                   textTransform: "uppercase",
                   background: "transparent",
-                  color: "#FF5B22",
-                  border: "1px solid #FF5B22",
+                  color: isMultiAgent ? "#4A90D9" : "#FF5B22",
+                  border: `1px solid ${isMultiAgent ? "#4A90D9" : "#FF5B22"}`,
                   padding: "6px 10px",
                   cursor: "pointer",
                 }}
@@ -390,29 +1052,63 @@ export default function Home() {
                 Terminer la simulation
               </button>
             )}
-            {documentFilename && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #FF5B22", padding: "3px 10px" }}>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#FF5B22", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  DOC : {documentFilename.slice(0, 20)}{documentFilename.length > 20 ? "…" : ""}
-                </span>
-              </div>
-            )}
             {gameState.isGameStarted && (
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 6, height: 6, background: "#FF5B22" }} className="animate-blink" />
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.18em", textTransform: "uppercase" }}>
-                  {documentFilename ? "Session Active" : "Greve Generale"}
+                <div style={{ width: 6, height: 6, background: isMultiAgent ? "#4A90D9" : "#FF5B22" }} className="animate-blink" />
+                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: isMultiAgent ? "#4A90D9" : "#FF5B22", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+                  Session Active
                 </span>
               </div>
             )}
           </div>
         </div>
 
+        {/* ── LEARNING MODE BANNER ── */}
+        {isMultiAgent && learningModeState.active && gameState.isGameStarted && (
+          <div
+            style={{
+              position: "relative",
+              zIndex: 22,
+              padding: "8px 14px",
+              margin: "10px 24px 0",
+              border: "1px solid rgba(122,182,72,0.45)",
+              background: "rgba(122,182,72,0.08)",
+              boxShadow: "0 0 18px rgba(122,182,72,0.18)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#7AB648", boxShadow: "0 0 10px #7AB648" }} />
+              <span
+                style={{
+                  fontFamily: "'Space Mono', monospace",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  color: "#9CD56A",
+                }}
+              >
+                Learning Mode ON
+              </span>
+            </div>
+            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.72)", lineHeight: 1.5 }}>
+              {learningModeState.message}
+            </p>
+          </div>
+        )}
+
+        {/* ── ACTIVE AGENT DISPLAY (multi-agent only) ── */}
+        {isMultiAgent && activeAgentState && gameState.isGameStarted && (
+          <div style={{ position: "relative", zIndex: 20 }} className="animate-fade-in" key={activeAgentState.agent.id}>
+            <ActiveAgentDisplay agentState={activeAgentState} />
+          </div>
+        )}
+
         {/* ── CENTER ── */}
         <div style={{ flex: 1, position: "relative", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
 
-          {/* START SCREEN */}
-          {!gameState.isGameStarted && !isLoading && (
+          {/* START SCREEN (legacy mode only) */}
+          {!isMultiAgent && !gameState.isGameStarted && !isLoading && (
             <div className="animate-fade-in" style={{ textAlign: "center", padding: 32 }}>
               <div style={{ fontFamily: "'VT323', monospace", fontSize: 64, color: "#FF5B22", lineHeight: 1, marginBottom: 8 }}>
                 METRO
@@ -470,12 +1166,12 @@ export default function Home() {
                   <div
                     key={i}
                     className="animate-soundwave"
-                    style={{ width: 5, height: "100%", background: "#FF5B22", animationDelay: `${i * 80}ms` }}
+                    style={{ width: 5, height: "100%", background: isMultiAgent ? "#4A90D9" : "#FF5B22", animationDelay: `${i * 80}ms` }}
                   />
                 ))}
               </div>
               <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.15em" }}>
-                {isDocumentMode ? "INITIALISATION DE LA SIMULATION ADAPTATIVE..." : "CONNEXION AU RESEAU RATP..."}
+                {isMultiAgent ? "CONNEXION AUX AGENTS..." : isDocumentMode ? "INITIALISATION DE LA SIMULATION ADAPTATIVE..." : "CONNEXION AU RESEAU RATP..."}
               </p>
             </div>
           )}
@@ -496,22 +1192,10 @@ export default function Home() {
                   GAME OVER
                 </div>
                 <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#5A5A5A", marginBottom: 28 }}>
-                  Le metro parisien a eu raison de vous.
+                  {isMultiAgent ? "La simulation est terminée." : "Le metro parisien a eu raison de vous."}
                 </p>
                 <button
-                  onClick={() => {
-                    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-                    sessionIdRef.current = crypto.randomUUID();
-                    setAssessments([]);
-                    setLatestReport(null);
-                    setGameState(INITIAL_GAME_STATE);
-                    setSpeakerName("Maître du Jeu");
-                    setSpeakerType("narrator");
-                    setScreenPhase("upload");
-                    setDocumentContext(null);
-                    setDocumentFilename(null);
-                    setIsReportVisible(false);
-                  }}
+                  onClick={handleRestartSimulation}
                   style={{
                     fontFamily:    "'Space Mono', monospace",
                     fontSize:      11,
@@ -555,7 +1239,7 @@ export default function Home() {
               justifyContent:"center",
               padding:       "20px 24px",
               background:    "#1A1A1A",
-              borderTop:     "2px solid rgba(255,91,34,0.15)",
+              borderTop:     `2px solid ${isMultiAgent ? "rgba(74,144,217,0.15)" : "rgba(255,91,34,0.15)"}`,
             }}
           >
             {hasMic ? (
@@ -568,6 +1252,12 @@ export default function Home() {
                     audioRef.current.pause();
                     audioRef.current = null;
                   }
+                  if (isRecording) {
+                    ttsGenerationRef.current += 1;
+                    ttsQueueRef.current = [];
+                    ttsPreloadRef.current.clear();
+                    isTtsPlayingRef.current = false;
+                  }
                 }}
               />
             ) : (
@@ -578,12 +1268,32 @@ export default function Home() {
       </div>
 
       {/* ====== SIDE PANEL (35%) ====== */}
-      <div style={{ width: "35%", minWidth: 300, maxWidth: 400 }}>
-        <SidePanel
-          gameState={gameState}
-          modeLabel={isDocumentMode ? "Document Simulation" : "RATP Survival"}
-          modeSubtitle={isDocumentMode ? "Mistral Adaptive Engine" : "Mistral Hackathon 2025"}
-        />
+      <div style={{ width: "35%", minWidth: 300, maxWidth: 400, background: "#1A1A1A", borderLeft: `2px solid ${isMultiAgent ? "rgba(74,144,217,0.1)" : "rgba(255,91,34,0.1)"}`, overflowY: "auto" }}>
+        {isMultiAgent && multiAgentState ? (
+          <>
+            <AgentPanel
+              agents={multiAgentState.agents}
+              activeAgentId={multiAgentState.activeAgentId}
+              scenarioTitle={multiAgentState.scenario.title}
+              currentAct={multiAgentState.currentAct}
+              totalActs={multiAgentState.scenario.acts.length}
+              acts={multiAgentState.scenario.acts}
+              events={gameEvents}
+              learningMode={learningModeState.active}
+              learningMessage={learningModeState.message}
+            />
+            <KnowledgeHeatmap
+              scores={multiAgentState.scores}
+              totalScore={multiAgentState.totalScore}
+            />
+          </>
+        ) : (
+          <SidePanel
+            gameState={gameState}
+            modeLabel={isDocumentMode ? "Document Simulation" : "RATP Survival"}
+            modeSubtitle={isDocumentMode ? "Mistral Adaptive Engine" : "Mistral Hackathon 2025"}
+          />
+        )}
       </div>
     </div>
   );

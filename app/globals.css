@@ -141,3 +141,25 @@ body {
   30%       { background: rgba(204, 42, 42, 0.15); }
 }
 .animate-damage { animation: damage-flash 0.5s ease-out; }
+
+/* Event notification slide-in */
+@keyframes notification-slide-in {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Shimmer sweep for act progress */
+@keyframes pulse-shimmer {
+  0%   { opacity: 0; transform: translateX(-100%); }
+  50%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(100%); }
+}
+
+/* ===== AGENT GENERATION VIEW ===== */
+
+/* Glow pulse for central brain node */
+@keyframes glow-pulse {
+  0%, 100% { transform: scale(1);   opacity: 0.6; }
+  50%       { transform: scale(1.15); opacity: 1; }
+}
+.animate-glow-pulse { animation: glow-pulse 2s ease-in-out infinite; }

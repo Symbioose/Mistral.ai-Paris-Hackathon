@@ -13,17 +13,34 @@ interface SetupSimulationToolOutput {
   evaluation_grid: EvaluationTopic[];
 }
 
+const ORCHESTRATION_MODEL = process.env.MISTRAL_ORCHESTRATION_MODEL || "mistral-small-latest";
+const ENABLE_PLAIN_JSON_RETRY = process.env.MISTRAL_ORCHESTRATION_RETRY === "true";
+
+function extractJsonObject(raw: string): SetupSimulationToolOutput | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as SetupSimulationToolOutput;
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1)) as SetupSimulationToolOutput;
+    } catch {
+      return null;
+    }
+  }
+}
+
 function parseToolCallPayload(raw: unknown): SetupSimulationToolOutput | null {
   if (!raw || typeof raw !== "object") return null;
   const call = raw as { function?: { arguments?: string } };
   const argsString = call.function?.arguments;
   if (!argsString) return null;
 
-  try {
-    return JSON.parse(argsString) as SetupSimulationToolOutput;
-  } catch {
-    return null;
-  }
+  return extractJsonObject(argsString);
 }
 
 function sanitizeSetup(setup: SetupSimulationToolOutput): SimulationSetup {
@@ -73,9 +90,109 @@ function sanitizeSetup(setup: SetupSimulationToolOutput): SimulationSetup {
   };
 }
 
+export function fallbackSimulationSetup(input: DocumentAnalysisInput): SimulationSetup {
+  const topicA = input.keyConcepts[0] || "Application des procédures";
+  const topicB = input.keyConcepts[1] || "Communication de crise";
+  const topicC = input.keyConcepts[2] || "Gestion des priorités";
+
+  return sanitizeSetup({
+    scenario: {
+      title: `${input.docTitle} · Exercice de crise`,
+      setting: "Un incident critique éclate sur votre site. Les décisions doivent être prises vite, avec informations incomplètes.",
+      initial_situation: "Vous prenez la main sur une situation tendue. Plusieurs interlocuteurs vous sollicitent en même temps.",
+      acts: [
+        {
+          act_number: 1,
+          title: "Détection",
+          description: "Identifier le problème réel et les signaux utiles.",
+          key_challenge: `Appliquer ${topicA} dans les 3 premières décisions.`,
+          trigger_condition: "Le joueur formule un plan d'action cohérent.",
+        },
+        {
+          act_number: 2,
+          title: "Conflit",
+          description: "Des objectifs contradictoires apparaissent entre les acteurs.",
+          key_challenge: `Arbitrer sans violer ${topicB}.`,
+          trigger_condition: "Le joueur maintient une stratégie alignée document.",
+        },
+        {
+          act_number: 3,
+          title: "Résolution",
+          description: "La pression monte, il faut clôturer avec des actions traçables.",
+          key_challenge: `Finaliser avec rigueur sur ${topicC}.`,
+          trigger_condition: "Le joueur sécurise la situation et formalise la décision finale.",
+        },
+      ],
+    },
+    agents: [
+      {
+        id: "chef_operations",
+        name: "M. Durand",
+        role: "Chef des opérations",
+        personality: "Directif, pressé, focalisé sur le temps de reprise. Tendance à couper les étapes jugées lentes.",
+        voice_type: "authoritative_male",
+        motivation: "Rétablir l'activité immédiatement, même avec un niveau de risque plus élevé.",
+        knowledge_topics: [topicA, topicC],
+        intro_line: "Situation critique en cours. Je veux votre plan d'action immediat, en trois etapes.",
+        relationship_to_player: "Vous teste en continu sur votre capacité à trancher vite.",
+      },
+      {
+        id: "inspectrice_qualite",
+        name: "Mme Lefevre",
+        role: "Inspectrice qualité et conformité",
+        personality: "Rigoureuse, factuelle, exigeante sur les preuves et la traçabilité.",
+        voice_type: "warm_female",
+        motivation: "Assurer la conformité stricte aux procédures du document.",
+        knowledge_topics: [topicA, topicB],
+        intro_line: "Je validerai chaque decision avec les preuves et la procedure associee.",
+        relationship_to_player: "Observe vos choix pour évaluer votre niveau de maîtrise.",
+      },
+      {
+        id: "technicien_junior",
+        name: "Lucas",
+        role: "Technicien junior",
+        personality: "Stressé, volontaire, parfois imprécis sous pression.",
+        voice_type: "stressed_young",
+        motivation: "Bien faire mais a besoin d'instructions simples et priorisées.",
+        knowledge_topics: [topicB, topicC],
+        intro_line: "Je suis en poste et pret a agir. Quelle est ma toute premiere action ?",
+        relationship_to_player: "Dépend de vos instructions pour agir correctement.",
+      },
+    ],
+    evaluation_grid: [
+      { topic: topicA, weight: 5, test_method: "Décisions initiales et priorisation des mesures critiques." },
+      { topic: topicB, weight: 4, test_method: "Qualité des consignes et coordination des acteurs." },
+      { topic: topicC, weight: 3, test_method: "Clôture de crise et justification des choix." },
+    ],
+  });
+}
+
+async function requestSetupByPlainJson(input: DocumentAnalysisInput): Promise<SetupSimulationToolOutput | null> {
+  const message = await mistralChat({
+    model: ORCHESTRATION_MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Retourne UNIQUEMENT un JSON valide avec ce schéma: { scenario, agents, evaluation_grid }. Ne mets aucun markdown.",
+      },
+      {
+        role: "user",
+        content: `Titre: ${input.docTitle}\nConcepts: ${input.keyConcepts.join(", ")}\nSections: ${input.sectionSummaries.join("\n")}`,
+      },
+    ],
+    toolChoice: "none",
+    temperature: 0.25,
+    maxTokens: 850,
+    timeoutMs: 5000,
+  });
+
+  return extractJsonObject(String(message.content || ""));
+}
+
 export async function orchestrateSimulation(input: DocumentAnalysisInput): Promise<SimulationSetup> {
   const message = await mistralChat({
-    model: "mistral-large-latest",
+    model: ORCHESTRATION_MODEL,
     messages: [
       {
         role: "system",
@@ -155,15 +272,22 @@ export async function orchestrateSimulation(input: DocumentAnalysisInput): Promi
       },
     ],
     toolChoice: { type: "function", function: { name: "setup_simulation" } },
-    temperature: 0.6,
-    maxTokens: 1400,
+    temperature: 0.45,
+    maxTokens: 950,
+    timeoutMs: 14000,
   });
 
   const toolCall = Array.isArray(message.tool_calls) ? message.tool_calls[0] : null;
-  const parsed = parseToolCallPayload(toolCall);
+  let parsed = parseToolCallPayload(toolCall);
+  if (!parsed && typeof message.content === "string") {
+    parsed = extractJsonObject(message.content);
+  }
+  if (!parsed && ENABLE_PLAIN_JSON_RETRY) {
+    parsed = await requestSetupByPlainJson(input);
+  }
 
   if (!parsed) {
-    throw new Error("Orchestrator did not return setup_simulation payload.");
+    return fallbackSimulationSetup(input);
   }
 
   return sanitizeSetup(parsed);

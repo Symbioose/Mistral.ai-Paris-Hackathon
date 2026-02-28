@@ -44,6 +44,7 @@ export function initializeGameState(
     conversationHistory: [],
     triggeredEvents: [],
     chaosMode: false,
+    testedTopics: [],
   };
 }
 
