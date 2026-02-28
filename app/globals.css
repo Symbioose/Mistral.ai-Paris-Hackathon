@@ -155,6 +155,30 @@ body {
   100% { opacity: 0; transform: translateX(100%); }
 }
 
+/* ===== MISSION CONTROL UX ===== */
+
+/* Full-screen act transition interstitial (3.5s total: fade in → hold → fade out) */
+@keyframes act-transition-in {
+  0%   { opacity: 0; transform: scale(1.03); }
+  12%  { opacity: 1; transform: scale(1); }
+  82%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.97); }
+}
+
+/* Score delta pop ("+8" / "-3" indicator) */
+@keyframes score-delta-pop {
+  0%   { opacity: 0; transform: translateY(5px); }
+  20%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Blinking cursor for typewriter effect */
+@keyframes typewriter-cursor {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
 /* ===== AGENT GENERATION VIEW ===== */
 
 /* Glow pulse for central brain node */

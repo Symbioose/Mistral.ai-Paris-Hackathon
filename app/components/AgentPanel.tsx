@@ -125,39 +125,20 @@ export default function AgentPanel({
           </span>
         </div>
 
-        {/* Current act title + challenge */}
+        {/* Act title — concise, no key_challenge (shown in ObjectiveHUD) */}
         {currentActInfo && (
-          <div
+          <p
             style={{
-              marginTop: 10,
-              padding: "8px 10px",
-              border: "1px solid rgba(74,144,217,0.2)",
-              background: "rgba(74,144,217,0.05)",
+              fontFamily: "'Space Mono', monospace",
+              fontSize: 9,
+              fontWeight: 700,
+              color: "rgba(243,240,230,0.55)",
+              marginTop: 8,
+              letterSpacing: "0.04em",
             }}
           >
-            <p
-              style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#F3F0E6",
-                marginBottom: 4,
-                letterSpacing: "0.03em",
-              }}
-            >
-              {currentActInfo.title}
-            </p>
-            <p
-              style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 8,
-                color: "rgba(255,255,255,0.45)",
-                lineHeight: 1.5,
-              }}
-            >
-              {currentActInfo.key_challenge}
-            </p>
-          </div>
+            {currentActInfo.title}
+          </p>
         )}
 
         {/* Learning mode banner */}

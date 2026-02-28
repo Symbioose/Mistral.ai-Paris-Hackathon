@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType } from "@/app/lib/types";
+import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType, Scenario } from "@/app/lib/types";
 import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
@@ -14,6 +14,9 @@ import ActiveAgentDisplay from "@/app/components/ActiveAgentDisplay";
 import AgentPanel from "@/app/components/AgentPanel";
 import KnowledgeHeatmap from "@/app/components/KnowledgeHeatmap";
 import EventNotification from "@/app/components/EventNotification";
+import ObjectiveHUD from "@/app/components/ObjectiveHUD";
+import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
+import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -220,6 +223,19 @@ export default function Home() {
   const ragIndexRef = useRef<RagIndex | null>(null);
   // Holds the next state to use for auto-kickoff after an agent switch.
   const autoKickoffStateRef = useRef<MultiAgentGameState | null>(null);
+
+  // ── Mission Control UX state ──
+  const [actTransition, setActTransition] = useState<{
+    completedAct: Scenario["acts"][0];
+    nextAct: Scenario["acts"][0] | null;
+  } | null>(null);
+  const [simulationEnd, setSimulationEnd] = useState<{
+    totalScore: number;
+    conclusionType: string;
+    finalMessage: string;
+  } | null>(null);
+  const [scoreDelta, setScoreDelta] = useState<number | null>(null);
+  const prevTotalScoreRef = useRef<number>(50);
 
   useEffect(() => {
     const has = typeof window !== "undefined"
@@ -580,6 +596,37 @@ export default function Home() {
 
       setMultiAgentState(computedNextState);
 
+      // ── Mission Control: act transition detection ──
+      if (nextAct > baseState.currentAct) {
+        const completedAct = baseState.scenario.acts.find((a) => a.act_number === baseState.currentAct);
+        const nextActInfo = baseState.scenario.acts.find((a) => a.act_number === nextAct);
+        if (completedAct) {
+          setActTransition({ completedAct, nextAct: nextActInfo ?? null });
+        }
+      }
+
+      // ── Mission Control: score delta indicator ──
+      if (activePatch.totalScore !== undefined) {
+        const delta = nextTotalScore - prevTotalScoreRef.current;
+        if (delta !== 0) {
+          setScoreDelta(delta);
+          setTimeout(() => setScoreDelta(null), 2600);
+        }
+        prevTotalScoreRef.current = nextTotalScore;
+      }
+
+      // ── Mission Control: simulation end ──
+      if ((activePatch as Record<string, unknown>).simulationComplete) {
+        const finalMsg =
+          String((activePatch as Record<string, unknown>).finalMessage || "") ||
+          (!suppressCurrentTurnOutput ? finalText : "");
+        setSimulationEnd({
+          totalScore: nextTotalScore,
+          conclusionType: String((activePatch as Record<string, unknown>).conclusionType || "partial"),
+          finalMessage: finalMsg,
+        });
+      }
+
       // Handle new triggered events for notifications
       if (nextEvents.length > (baseState.triggeredEvents?.length || 0)) {
         const latestEvent = nextEvents[nextEvents.length - 1];
@@ -831,6 +878,10 @@ export default function Home() {
     setIsReportVisible(false);
     setMultiAgentState(null);
     setGameEvents([]);
+    setActTransition(null);
+    setSimulationEnd(null);
+    setScoreDelta(null);
+    prevTotalScoreRef.current = 50;
   }, []);
 
   // Get active agent for display
@@ -1131,6 +1182,17 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── OBJECTIVE HUD (multi-agent only) ── */}
+        {isMultiAgent && multiAgentState && gameState.isGameStarted && (
+          <ObjectiveHUD
+            act={multiAgentState.scenario.acts.find((a) => a.act_number === multiAgentState.currentAct)}
+            currentAct={multiAgentState.currentAct}
+            totalActs={multiAgentState.scenario.acts.length}
+            totalScore={multiAgentState.totalScore}
+            scoreDelta={scoreDelta}
+          />
+        )}
+
         {/* ── ACTIVE AGENT DISPLAY (multi-agent only) ── */}
         {isMultiAgent && activeAgentState && gameState.isGameStarted && (
           <div style={{ position: "relative", zIndex: 20 }} className="animate-fade-in" key={activeAgentState.agent.id}>
@@ -1329,6 +1391,25 @@ export default function Home() {
           />
         )}
       </div>
+
+      {/* ── ACT TRANSITION OVERLAY ── */}
+      {actTransition && (
+        <ActTransitionOverlay
+          completedAct={actTransition.completedAct}
+          nextAct={actTransition.nextAct}
+          onComplete={() => setActTransition(null)}
+        />
+      )}
+
+      {/* ── SIMULATION END OVERLAY ── */}
+      {simulationEnd && (
+        <SimulationEndOverlay
+          totalScore={simulationEnd.totalScore}
+          conclusionType={simulationEnd.conclusionType}
+          finalMessage={simulationEnd.finalMessage}
+          onComplete={handleFinishSimulation}
+        />
+      )}
     </div>
   );
 }

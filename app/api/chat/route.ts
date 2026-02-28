@@ -66,9 +66,17 @@ function buildContext(
       ? `\n🚫 Thèmes déjà testés — ne PAS répéter ces questions : ${testedTopics.join(", ")}. Teste autre chose ou approfondis un angle différent.`
       : "";
 
+  // End-game hint injected when in last act with enough exchanges.
+  const isLastAct = gameState.currentAct >= (gameState.scenario?.acts?.length || 1);
+  const totalTurns = gameState.conversationHistory.length;
+  const endHint =
+    isLastAct && totalTurns >= 8
+      ? `\n🏁 ACTE FINAL — La simulation approche de sa conclusion. Si le joueur a correctement relevé le défi "${act?.key_challenge || "principal"}", appelle conclude_simulation avec un bilan narratif bref et percutant.`
+      : "";
+
   return `## Contexte de simulation
 Acte ${gameState.currentAct}${act ? ` — ${act.title}` : ""}: ${act?.key_challenge || "Appliquer les procédures."}
-Événements: ${gameState.triggeredEvents.join(", ") || "aucun"}${switchHint}${learningHint}${testedHint}
+Événements: ${gameState.triggeredEvents.join(", ") || "aucun"}${switchHint}${learningHint}${testedHint}${endHint}
 
 ## Autres personnages disponibles (switch_agent)
 ${others || "Aucun autre personnage disponible."}
@@ -229,6 +237,29 @@ export async function POST(req: NextRequest) {
           },
         },
       },
+      {
+        type: "function",
+        function: {
+          name: "conclude_simulation",
+          description:
+            "Termine la simulation. Appelle uniquement quand le joueur a relevé le défi de l'acte final ou quand la crise est résolue de manière définitive.",
+          parameters: {
+            type: "object",
+            properties: {
+              final_message: {
+                type: "string",
+                description: "Bilan narratif conclusif adressé au joueur (2-3 phrases max).",
+              },
+              conclusion_type: {
+                type: "string",
+                enum: ["success", "partial", "failure"],
+                description: "success = objectifs atteints, partial = partiellement, failure = échoué.",
+              },
+            },
+            required: ["final_message", "conclusion_type"],
+          },
+        },
+      },
     ],
     toolChoice: "auto",
     temperature: 0.65,
@@ -302,6 +333,12 @@ export async function POST(req: NextRequest) {
           patch.testedTopics = [...already, topic];
         }
       }
+    }
+
+    if (name === "conclude_simulation") {
+      patch.simulationComplete = true;
+      patch.conclusionType = String(args.conclusion_type || "partial");
+      patch.finalMessage = String(args.final_message || "");
     }
   }
 
@@ -394,6 +431,11 @@ export async function POST(req: NextRequest) {
                 ...((patch.triggeredEvents as string[] | undefined) || gameState.triggeredEvents),
                 `Passage à l'acte ${nextAct}: ${gameState.scenario.acts.find((a) => a.act_number === nextAct)?.title || "Nouvelle phase"}`,
               ];
+            } else if (gameState.currentAct >= maxAct && !patch.simulationComplete) {
+              // Already at last act and evaluator wants to advance → natural simulation end.
+              patch.simulationComplete = true;
+              patch.conclusionType = "success";
+              patch.finalMessage = "";
             }
           }
 

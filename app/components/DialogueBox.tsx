@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface DialogueBoxProps {
   text: string;
@@ -12,22 +12,55 @@ interface DialogueBoxProps {
 export default function DialogueBox({ text, isLoading, speakerName = "Maître du Jeu", speakerType = "narrator" }: DialogueBoxProps) {
   const [displayText, setDisplayText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTextRef = useRef("");
 
   useEffect(() => {
-    if (!text) { setDisplayText(""); return; }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (!text) {
+      lastTextRef.current = "";
+      setDisplayText("");
+      setIsTyping(false);
+      return;
+    }
+
+    const previous = lastTextRef.current;
+    const isStreamingAppend = text.startsWith(previous) && text.length >= previous.length;
+    lastTextRef.current = text;
+
+    // During token streaming, avoid restarting typewriter every render.
+    if (isStreamingAppend) {
+      setDisplayText(text);
+      setIsTyping(false);
+      return;
+    }
+
     setIsTyping(true);
     setDisplayText("");
     let index = 0;
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       if (index < text.length) {
         setDisplayText(text.slice(0, index + 1));
         index++;
       } else {
         setIsTyping(false);
-        clearInterval(interval);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
       }
     }, 20);
-    return () => clearInterval(interval);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [text]);
 
   const isNpc = speakerType === "npc";
