@@ -183,7 +183,8 @@ Genere EXACTEMENT ${categories.length} agent(s) (un par categorie) + 1 agent ped
 
 REGLES AGENTS:
 - Chaque agent correspond a UNE categorie et a une personnalite distincte
-- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, calm_narrator, gruff_veteran
+- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, réservé au narrateur système)
+- Si le personnage est une femme (prénom féminin), voice_type OBLIGATOIREMENT "warm_female"
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
 - intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
@@ -264,15 +265,43 @@ JSON strict:
     throw new Error("Failed to generate agents and scenario");
   }
 
-  const VALID_VOICES = new Set(["authoritative_male", "warm_female", "stressed_young", "calm_narrator", "gruff_veteran"]);
-  const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "calm_narrator"];
+  // calm_narrator is reserved for stage directions (*asterisks*) — never assign to agents
+  const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "stressed_young", "gruff_veteran"]);
+  const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "warm_female"];
+  const MALE_VOICES = new Set<Agent["voice_type"]>(["authoritative_male", "stressed_young", "gruff_veteran"]);
+
+  // Detect feminine French first names heuristically
+  function isFeminineName(fullName: string): boolean {
+    const first = fullName.trim().split(/\s+/)[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const maleEndingInE = new Set(["alexandre", "philippe", "guillaume", "maxime", "jerome", "pierre", "cedric", "dominique", "claude", "camille"]);
+    if (maleEndingInE.has(first)) return false;
+    if (/(?:ie|ine|elle|ette|ise|ille|ienne|ande|onde)$/.test(first)) return true;
+    if (first.endsWith("e")) return true;
+    const femaleNames = new Set(["sarah", "lea", "clara", "laura", "julia", "nadia", "nora", "flora", "sonia", "ana", "fatima", "inès", "ines", "lucie", "alice", "emma", "anna", "lisa"]);
+    return femaleNames.has(first);
+  }
+
+  function resolveAgentVoice(rawVoice: string, name: string, fallbackIndex: number): Agent["voice_type"] {
+    const female = isFeminineName(name);
+    // LLM picked a valid non-narrator voice
+    if (VALID_AGENT_VOICES.has(rawVoice)) {
+      const v = rawVoice as Agent["voice_type"];
+      // Female name with a male voice → override
+      if (female && MALE_VOICES.has(v)) return "warm_female";
+      return v;
+    }
+    // Fallback rotation
+    const fallback = VOICE_ROTATION[fallbackIndex % VOICE_ROTATION.length];
+    if (female && MALE_VOICES.has(fallback)) return "warm_female";
+    return fallback;
+  }
 
   const agents: Agent[] = parsed.agents.slice(0, categories.length).map((a, i) => ({
     id: String(a.id || `agent_${i + 1}`).toLowerCase().replace(/[^a-z0-9_]/g, "_"),
     name: String(a.name || `Agent ${i + 1}`),
     role: String(a.role || categories[i]?.name || "Expert"),
     personality: String(a.personality || "Professionnel et direct."),
-    voice_type: VALID_VOICES.has(String(a.voice_type)) ? a.voice_type as Agent["voice_type"] : VOICE_ROTATION[i % VOICE_ROTATION.length],
+    voice_type: resolveAgentVoice(String(a.voice_type || ""), String(a.name || ""), i),
     motivation: String(a.motivation || "Résoudre la situation."),
     knowledge_topics: Array.isArray(a.knowledge_topics) ? a.knowledge_topics.map(String) : [categories[i]?.name || ""],
     intro_line: String(a.intro_line || "Situation critique. On doit agir."),

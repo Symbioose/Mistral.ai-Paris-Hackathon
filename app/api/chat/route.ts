@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion, SharedMemoryNote } from "@/app/lib/types";
-import { mistralChat, bedrockClient } from "@/app/lib/agents/mistral-client";
-import OpenAI from "openai";
+import { mistralChat } from "@/app/lib/agents/mistral-client";
+import { streamText } from "ai";
+import { mistral as vercelMistral } from "@ai-sdk/mistral";
 
 // ---------------------------------------------------------------------------
 // Mistral Function Calling — Tools for agent orchestration
@@ -641,12 +642,11 @@ export async function POST(req: NextRequest) {
     },
   ];
 
-  const streamingPromise = bedrockClient.chat.completions.create({
-    model: "mistral.mistral-large-3-675b-instruct",
-    messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })) as OpenAI.ChatCompletionMessageParam[],
+  const textResult = streamText({
+    model: vercelMistral("mistral-large-latest"),
+    messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })),
     temperature: 0.5,
-    max_tokens: 150,
-    stream: true,
+    maxOutputTokens: 150,
   });
 
   const encoder = new TextEncoder();
@@ -714,9 +714,8 @@ export async function POST(req: NextRequest) {
       let tokenEventCount = 0;
 
       try {
-        const streamingResponse = await streamingPromise;
-        for await (const chunk of streamingResponse) {
-          const rawDelta = chunk.choices[0]?.delta?.content || "";
+        for await (const delta of textResult.textStream) {
+          const rawDelta = String(delta || "");
           if (!rawDelta) continue;
           streamedRaw += rawDelta;
 

@@ -185,7 +185,10 @@ export default function Home() {
   const [hasMic, setHasMic] = useState(true);
   const [documentContext, setDocumentContext] = useState<string | null>(null);
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
-  const [screenPhase, setScreenPhase] = useState<"upload" | "ready" | "orchestrating" | "game">("upload");
+  const [screenPhase, setScreenPhase] = useState<"landing" | "upload" | "ready" | "orchestrating" | "game">("landing");
+  const [landingModal, setLandingModal] = useState<null | "login" | "join">(null);
+  const [landingModalStep, setLandingModalStep] = useState<"idle" | "loading" | "done">("idle");
+  const [joinCode, setJoinCode] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const isRecordingRef = useRef(false);
@@ -1022,7 +1025,7 @@ export default function Home() {
     setGameState(INITIAL_GAME_STATE);
     setSpeakerName("Maître du Jeu");
     setSpeakerType("narrator");
-    setScreenPhase("upload");
+    setScreenPhase("landing");
     setDocumentContext(null);
     setDocumentFilename(null);
     setIsReportVisible(false);
@@ -1048,6 +1051,314 @@ export default function Home() {
         onRestart={handleRestartSimulation}
         multiAgentState={multiAgentState}
       />
+    );
+  }
+
+  // ====== LANDING SCREEN ======
+  if (screenPhase === "landing") {
+    const openModal = (type: "login" | "join") => {
+      setLandingModal(type);
+      setLandingModalStep("idle");
+      setJoinCode("");
+    };
+    const closeModal = () => {
+      setLandingModal(null);
+      setLandingModalStep("idle");
+    };
+    const handleFakeSubmit = () => {
+      setLandingModalStep("loading");
+      setTimeout(() => setLandingModalStep("done"), 1200);
+    };
+
+    return (
+      <div style={{ height: "100vh", width: "100vw", display: "flex", background: "#F3F0E6", overflow: "hidden", position: "relative" }}>
+
+        {/* ── Left panel — branding ── */}
+        <div style={{
+          width: "44%",
+          background: "#1A1A1A",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "48px 44px",
+          borderRight: "4px solid #FF5B22",
+        }}>
+          <div>
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 52 }}>
+              <div style={{ width: 6, height: 44, background: "#FF5B22" }} />
+              <div>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: 3 }}>
+                  Powered by Mistral AI · AWS Bedrock
+                </p>
+                <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 22, fontWeight: 700, color: "#F3F0E6", letterSpacing: "0.06em" }}>
+                  YouGotIt
+                </h1>
+              </div>
+            </div>
+
+            {/* Tagline */}
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 46, color: "#FF5B22", lineHeight: 1.1, marginBottom: 28 }}>
+              FORMATION<br />IMMERSIVE<br />B2B
+            </div>
+
+            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#C4C0B5", lineHeight: 1.9, maxWidth: 320 }}>
+              Transformez n&apos;importe quel document en simulation de formation vocale multi-agents. Vos équipes apprennent en jouant, vos RH pilotent en temps réel.
+            </p>
+          </div>
+
+          {/* Feature list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[
+              { icon: "📂", label: "Import de documents (PDF, TXT)" },
+              { icon: "🤖", label: "Agents IA génèrent la simulation" },
+              { icon: "🎙️", label: "Roleplay vocal immersif" },
+              { icon: "📊", label: "Dashboard RH en temps réel" },
+              { icon: "🔒", label: "Gestion d'équipes & tokens d'accès" },
+            ].map((f) => (
+              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 13 }}>{f.icon}</span>
+                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.05em" }}>{f.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Right panel — access options ── */}
+        <div style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "48px 52px",
+          gap: 20,
+        }}>
+          <div style={{ width: "100%", maxWidth: 440, marginBottom: 8 }}>
+            <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 14, fontWeight: 700, color: "#1A1A1A", letterSpacing: "0.08em", marginBottom: 6 }}>
+              Accéder à la plateforme
+            </h2>
+            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A" }}>
+              Choisissez votre mode d&apos;accès.
+            </p>
+          </div>
+
+          {/* Option 1 — RH Admin */}
+          <div style={{ width: "100%", maxWidth: 440, border: "3px solid #1A1A1A", background: "#FAFAF7", boxShadow: "5px 5px 0 #1A1A1A", padding: "24px 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 4 }}>
+                  Compte entreprise
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1A1A1A" }}>
+                  Espace RH Admin
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", marginTop: 4, lineHeight: 1.6 }}>
+                  Gérez les formations, suivez l&apos;avancement de vos équipes.
+                </p>
+              </div>
+              <span style={{ fontSize: 24 }}>🏢</span>
+            </div>
+            <button
+              onClick={() => openModal("login")}
+              style={{
+                fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                letterSpacing: "0.15em", textTransform: "uppercase",
+                padding: "10px 20px", background: "#1A1A1A", color: "#F3F0E6",
+                border: "2px solid #1A1A1A", boxShadow: "3px 3px 0 #5A5A5A",
+                cursor: "pointer", width: "100%",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #5A5A5A"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #5A5A5A"; e.currentTarget.style.transform = "translate(0,0)"; }}
+            >
+              Se connecter →
+            </button>
+          </div>
+
+          {/* Option 2 — Rejoindre équipe */}
+          <div style={{ width: "100%", maxWidth: 440, border: "3px solid #1A1A1A", background: "#FAFAF7", boxShadow: "5px 5px 0 #1A1A1A", padding: "24px 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 4 }}>
+                  Accès équipe
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1A1A1A" }}>
+                  Rejoindre une équipe
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", marginTop: 4, lineHeight: 1.6 }}>
+                  Utilisez le token fourni par votre RH pour accéder aux formations.
+                </p>
+              </div>
+              <span style={{ fontSize: 24 }}>👥</span>
+            </div>
+            <button
+              onClick={() => openModal("join")}
+              style={{
+                fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                letterSpacing: "0.15em", textTransform: "uppercase",
+                padding: "10px 20px", background: "#1A1A1A", color: "#F3F0E6",
+                border: "2px solid #1A1A1A", boxShadow: "3px 3px 0 #5A5A5A",
+                cursor: "pointer", width: "100%",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #5A5A5A"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #5A5A5A"; e.currentTarget.style.transform = "translate(0,0)"; }}
+            >
+              Entrer un code équipe →
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: "100%", maxWidth: 440, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1, height: 2, background: "#1A1A1A" }} />
+            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.2em" }}>OU</span>
+            <div style={{ flex: 1, height: 2, background: "#1A1A1A" }} />
+          </div>
+
+          {/* Option 3 — Formation libre */}
+          <div style={{ width: "100%", maxWidth: 440, border: "3px solid #FF5B22", background: "#FFF8F5", boxShadow: "5px 5px 0 #CC4919", padding: "24px 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 4 }}>
+                  Accès libre
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1A1A1A" }}>
+                  Lancer ma propre formation
+                </p>
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", marginTop: 4, lineHeight: 1.6 }}>
+                  Uploadez votre document et générez une simulation en quelques secondes.
+                </p>
+              </div>
+              <span style={{ fontSize: 24 }}>🚀</span>
+            </div>
+            <button
+              onClick={() => setScreenPhase("upload")}
+              style={{
+                fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                letterSpacing: "0.15em", textTransform: "uppercase",
+                padding: "10px 20px", background: "#FF5B22", color: "#F3F0E6",
+                border: "2px solid #FF5B22", boxShadow: "3px 3px 0 #CC4919",
+                cursor: "pointer", width: "100%",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #CC4919"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #CC4919"; e.currentTarget.style.transform = "translate(0,0)"; }}
+            >
+              Commencer maintenant →
+            </button>
+          </div>
+        </div>
+
+        {/* ── Fake modals ── */}
+        {landingModal && (
+          <div
+            onClick={closeModal}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(26,26,26,0.7)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 100,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "#F3F0E6", border: "3px solid #1A1A1A",
+                boxShadow: "8px 8px 0 #1A1A1A", padding: "36px 40px",
+                width: 400, position: "relative",
+              }}
+            >
+              {/* Close */}
+              <button
+                onClick={closeModal}
+                style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", cursor: "pointer", fontFamily: "'Space Mono', monospace", fontSize: 13, color: "#5A5A5A" }}
+              >✕</button>
+
+              {landingModal === "login" && (
+                <>
+                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 6 }}>Espace RH Admin</p>
+                  <h3 style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: "#1A1A1A", marginBottom: 24 }}>Connexion</h3>
+
+                  {landingModalStep === "done" ? (
+                    <div style={{ border: "2px solid #CC2A2A", background: "rgba(204,42,42,0.05)", padding: "14px 16px" }}>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#CC2A2A", lineHeight: 1.7 }}>
+                        Compte non reconnu. Contactez votre administrateur RH pour obtenir vos accès.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+                        <div>
+                          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.1em", marginBottom: 6 }}>EMAIL PROFESSIONNEL</p>
+                          <input type="email" placeholder="prenom.nom@entreprise.com" style={{ width: "100%", fontFamily: "'Space Mono', monospace", fontSize: 11, padding: "10px 14px", border: "2px solid #1A1A1A", background: "#FAFAF7", boxSizing: "border-box", outline: "none" }} />
+                        </div>
+                        <div>
+                          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.1em", marginBottom: 6 }}>MOT DE PASSE</p>
+                          <input type="password" placeholder="••••••••" style={{ width: "100%", fontFamily: "'Space Mono', monospace", fontSize: 11, padding: "10px 14px", border: "2px solid #1A1A1A", background: "#FAFAF7", boxSizing: "border-box", outline: "none" }} />
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleFakeSubmit}
+                        disabled={landingModalStep === "loading"}
+                        style={{
+                          width: "100%", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                          letterSpacing: "0.15em", textTransform: "uppercase",
+                          padding: "12px", background: "#1A1A1A", color: "#F3F0E6",
+                          border: "none", boxShadow: "3px 3px 0 #5A5A5A",
+                          cursor: landingModalStep === "loading" ? "wait" : "pointer",
+                        }}
+                      >
+                        {landingModalStep === "loading" ? "Connexion..." : "Se connecter →"}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+
+              {landingModal === "join" && (
+                <>
+                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 6 }}>Accès équipe</p>
+                  <h3 style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: "#1A1A1A", marginBottom: 8 }}>Rejoindre une équipe</h3>
+                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", lineHeight: 1.7, marginBottom: 24 }}>
+                    Entrez le token fourni par votre responsable RH pour accéder aux formations de votre équipe.
+                  </p>
+
+                  {landingModalStep === "done" ? (
+                    <div style={{ border: "2px solid #CC2A2A", background: "rgba(204,42,42,0.05)", padding: "14px 16px" }}>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#CC2A2A", lineHeight: 1.7 }}>
+                        Code équipe invalide ou expiré. Demandez un nouveau token à votre administrateur.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ marginBottom: 20 }}>
+                        <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.1em", marginBottom: 6 }}>TOKEN D&apos;ACCÈS ÉQUIPE</p>
+                        <input
+                          type="text"
+                          placeholder="FORMA-XXXX-XXXX"
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                          style={{ width: "100%", fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", padding: "12px 14px", border: "2px solid #1A1A1A", background: "#FAFAF7", boxSizing: "border-box", outline: "none" }}
+                        />
+                      </div>
+                      <button
+                        onClick={handleFakeSubmit}
+                        disabled={landingModalStep === "loading" || joinCode.length < 4}
+                        style={{
+                          width: "100%", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700,
+                          letterSpacing: "0.15em", textTransform: "uppercase",
+                          padding: "12px", background: joinCode.length >= 4 ? "#FF5B22" : "#C4C0B5", color: "#F3F0E6",
+                          border: "none", boxShadow: joinCode.length >= 4 ? "3px 3px 0 #CC4919" : "none",
+                          cursor: joinCode.length >= 4 ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        {landingModalStep === "loading" ? "Vérification..." : "Rejoindre →"}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
