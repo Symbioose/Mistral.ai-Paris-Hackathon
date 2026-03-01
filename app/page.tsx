@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType, Scenario } from "@/app/lib/types";
+import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType, Scenario, GamePlan, InteractionState } from "@/app/lib/types";
 import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
@@ -162,29 +162,6 @@ function splitTtsByStageDirections(
   return out;
 }
 
-function detectPlayerStrugglingTopics(
-  playerText: string,
-  scores: Array<{ topic: string; score: number; weight: number }>,
-): string[] {
-  const text = playerText.toLowerCase();
-  const confusionSignals = [
-    "je ne comprends pas",
-    "j'ai pas compris",
-    "explique",
-    "je suis perdu",
-    "help",
-    "aide",
-    "bloqué",
-    "bloque",
-  ];
-  const hasConfusionSignal = confusionSignals.some((signal) => text.includes(signal));
-  const lowTopics = scores.filter((s) => s.score < 45).map((s) => s.topic);
-  if (!hasConfusionSignal) return lowTopics.slice(0, 3);
-  const matches = scores
-    .filter((s) => text.includes(s.topic.toLowerCase()) || s.score < 55)
-    .map((s) => s.topic);
-  return [...new Set([...matches, ...lowTopics])].slice(0, 3);
-}
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
@@ -439,9 +416,6 @@ export default function Home() {
         conversationHistory: updatedHistory,
       };
 
-      const turnsWithCurrentAgent = baseState.agents.find((a) => a.agent.id === baseState.activeAgentId)?.interactionCount || 0;
-      const strugglingTopics = detectPlayerStrugglingTopics(playerText, baseState.scores);
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -449,8 +423,6 @@ export default function Home() {
           playerMessage: playerText,
           gameState: stateToSend,
           kickoff: isKickoff,
-          turnsWithCurrentAgent,
-          strugglingTopics,
         }),
       });
 
@@ -573,6 +545,9 @@ export default function Home() {
           ]
         : [...updatedHistory];
 
+      const nextInteractionState =
+        (activePatch.interactionState as InteractionState | undefined) || baseState.interactionState;
+
       const computedNextState: MultiAgentGameState = {
         ...baseState,
         agents: nextAgents,
@@ -584,6 +559,8 @@ export default function Home() {
         chaosMode: nextChaos,
         testedTopics: nextTestedTopics,
         conversationHistory: nextConversationHistory,
+        gamePlan: baseState.gamePlan,
+        interactionState: nextInteractionState,
       };
 
       setMultiAgentState(computedNextState);
@@ -639,13 +616,13 @@ export default function Home() {
         setSpeakerType("npc");
       }
 
-      const learningMode = Boolean((activePatch as Record<string, unknown>).learningMode);
+      const learningMode = nextInteractionState?.phase === "LEARNING";
       setLearningModeState({
         active: learningMode,
         message: learningMode
           ? String(
               (activePatch as Record<string, unknown>).switchReason ||
-                "Un agent passe en mode apprentissage pour vous guider.",
+                "Mode apprentissage actif — dites \"j'ai compris\" pour continuer.",
             )
           : "",
       });
@@ -776,7 +753,7 @@ export default function Home() {
     }
   }, [documentContext, applyActions, playAudio]);
 
-  const handleOrchestrationReady = useCallback(async (setup: SimulationSetup) => {
+  const handleOrchestrationReady = useCallback(async (setup: SimulationSetup & { gamePlan?: GamePlan }) => {
     // Build RAG index from document
     const ragIndex = buildRagIndex(documentContext || "");
     ragIndexRef.current = ragIndex;
@@ -806,6 +783,20 @@ export default function Home() {
       ? Math.round(scores.reduce((acc, s) => acc + s.score * s.weight, 0) / scores.reduce((acc, s) => acc + s.weight, 0))
       : 0;
 
+    // Initialize interaction state from gamePlan
+    const gamePlan = setup.gamePlan;
+    const interactionState: InteractionState | undefined = gamePlan
+      ? {
+          phase: "ASKING" as const,
+          currentCategoryIndex: 0,
+          currentQAIndex: 0,
+          failCount: 0,
+          completedQAs: [],
+          failedQAs: [],
+          currentQAPairId: gamePlan.categories[0]?.qaPairIds[0] || "",
+        }
+      : undefined;
+
     const initialState: MultiAgentGameState = {
       scenario: setup.scenario,
       currentAct: 1,
@@ -818,6 +809,8 @@ export default function Home() {
       triggeredEvents: [],
       chaosMode: false,
       testedTopics: [],
+      gamePlan,
+      interactionState,
     };
 
     setMultiAgentState(initialState);
@@ -1184,34 +1177,59 @@ export default function Home() {
         {/* ── LEARNING MODE BANNER ── */}
         {isMultiAgent && learningModeState.active && gameState.isGameStarted && (
           <div
+            className="animate-fade-in"
             style={{
               position: "relative",
               zIndex: 22,
-              padding: "8px 14px",
+              padding: "10px 16px",
               margin: "10px 24px 0",
-              border: "1px solid rgba(122,182,72,0.45)",
+              border: "2px solid rgba(122,182,72,0.5)",
               background: "rgba(122,182,72,0.08)",
-              boxShadow: "0 0 18px rgba(122,182,72,0.18)",
+              boxShadow: "0 0 24px rgba(122,182,72,0.2), inset 0 0 30px rgba(122,182,72,0.05)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#7AB648", boxShadow: "0 0 10px #7AB648" }} />
-              <span
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: "0.15em",
-                  textTransform: "uppercase",
-                  color: "#9CD56A",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 10px",
+                  background: "rgba(122,182,72,0.2)",
+                  border: "1px solid rgba(122,182,72,0.5)",
                 }}
               >
-                Learning Mode ON
+                <span
+                  className="animate-blink"
+                  style={{ width: 7, height: 7, borderRadius: "50%", background: "#7AB648", boxShadow: "0 0 10px #7AB648" }}
+                />
+                <span
+                  style={{
+                    fontFamily: "'Space Mono', monospace",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    textTransform: "uppercase",
+                    color: "#9CD56A",
+                  }}
+                >
+                  Learning Mode ON
+                </span>
+              </div>
+              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.72)", lineHeight: 1.5, flex: 1 }}>
+                {learningModeState.message}
+              </p>
+              <span style={{
+                fontFamily: "'Space Mono', monospace",
+                fontSize: 8,
+                color: "rgba(122,182,72,0.6)",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}>
+                {"Dites \"j'ai compris\" pour continuer"}
               </span>
             </div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.72)", lineHeight: 1.5 }}>
-              {learningModeState.message}
-            </p>
           </div>
         )}
 
@@ -1234,7 +1252,125 @@ export default function Home() {
         )}
 
         {/* ── CENTER ── */}
-        <div style={{ flex: 1, position: "relative", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ flex: 1, position: "relative", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+
+          {/* ── Q&A PROGRESS TRACKER (multi-agent game in progress) ── */}
+          {isMultiAgent && multiAgentState?.gamePlan && multiAgentState.interactionState && gameState.isGameStarted && !gameState.isGameOver && (
+            <div
+              className="animate-fade-in"
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                padding: "16px 24px",
+                overflowY: "auto",
+                pointerEvents: "none",
+              }}
+            >
+              {(() => {
+                const plan = multiAgentState.gamePlan!;
+                const iState = multiAgentState.interactionState!;
+                const allQAPairs = plan.qaPairs;
+                const completedSet = new Set(iState.completedQAs || []);
+                const failedSet = new Set(iState.failedQAs || []);
+
+                return plan.categories.map((cat, catIdx) => {
+                  const isCurrent = catIdx === iState.currentCategoryIndex;
+                  const isDone = catIdx < iState.currentCategoryIndex;
+                  const catAgent = plan.agents[catIdx];
+
+                  return (
+                    <div
+                      key={cat.id}
+                      style={{
+                        marginBottom: 10,
+                        padding: "8px 12px",
+                        border: `1px solid ${isCurrent ? "rgba(74,144,217,0.4)" : isDone ? "rgba(122,182,72,0.25)" : "rgba(255,255,255,0.06)"}`,
+                        background: isCurrent ? "rgba(74,144,217,0.06)" : isDone ? "rgba(122,182,72,0.04)" : "rgba(255,255,255,0.02)",
+                        transition: "all 0.3s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: isDone ? "#7AB648" : isCurrent ? "#4A90D9" : "#3A3A3A",
+                          boxShadow: isCurrent ? "0 0 8px #4A90D9" : isDone ? "0 0 6px #7AB648" : "none",
+                        }} />
+                        <span style={{
+                          fontFamily: "'Space Mono', monospace",
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: "0.12em",
+                          textTransform: "uppercase",
+                          color: isDone ? "#7AB648" : isCurrent ? "#4A90D9" : "#5A5A5A",
+                        }}>
+                          {catAgent?.name || `Agent ${catIdx + 1}`} — {cat.name}
+                        </span>
+                        {isDone && (
+                          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#7AB648", marginLeft: "auto" }}>
+                            COMPLETE
+                          </span>
+                        )}
+                        {isCurrent && (
+                          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#4A90D9", marginLeft: "auto" }} className="animate-blink">
+                            EN COURS
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {cat.qaPairIds.map((qaId, qaIdx) => {
+                          const qa = allQAPairs.find((q) => q.id === qaId);
+                          const isCompleted = completedSet.has(qaId);
+                          const isFailed = failedSet.has(qaId);
+                          const isActive = isCurrent && qaIdx === iState.currentQAIndex;
+
+                          let bg = "rgba(255,255,255,0.05)";
+                          let borderColor = "rgba(255,255,255,0.08)";
+                          let textColor = "#5A5A5A";
+
+                          if (isCompleted) {
+                            bg = "rgba(122,182,72,0.15)";
+                            borderColor = "rgba(122,182,72,0.4)";
+                            textColor = "#9CD56A";
+                          } else if (isFailed) {
+                            bg = "rgba(204,42,42,0.15)";
+                            borderColor = "rgba(204,42,42,0.4)";
+                            textColor = "#CC2A2A";
+                          } else if (isActive) {
+                            bg = "rgba(74,144,217,0.12)";
+                            borderColor = "rgba(74,144,217,0.5)";
+                            textColor = "#4A90D9";
+                          }
+
+                          return (
+                            <div
+                              key={qaId}
+                              style={{
+                                padding: "3px 8px",
+                                border: `1px solid ${borderColor}`,
+                                background: bg,
+                                fontFamily: "'Space Mono', monospace",
+                                fontSize: 8,
+                                color: textColor,
+                                letterSpacing: "0.05em",
+                                transition: "all 0.3s ease",
+                              }}
+                              title={qa?.question || ""}
+                            >
+                              {isCompleted ? "OK" : isFailed ? "!!" : isActive ? `Q${qaIdx + 1}` : `Q${qaIdx + 1}`}
+                              {qa?.difficulty === "hard" ? " *" : ""}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
 
           {/* START SCREEN (legacy mode only) */}
           {!isMultiAgent && !gameState.isGameStarted && !isLoading && (

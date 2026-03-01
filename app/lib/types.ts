@@ -212,6 +212,55 @@ export interface MultiAgentGameState {
   chaosMode: boolean;
   /** Topics already tested via check_knowledge — agents must not repeat them. */
   testedTopics: string[];
+  /** Pre-determined Q&A game plan */
+  gamePlan?: GamePlan;
+  /** Current interaction state machine position */
+  interactionState?: InteractionState;
+}
+
+// ============================================
+// Pre-Determined Q&A System
+// ============================================
+
+export interface QAPair {
+  id: string;
+  question: string;
+  expected_answer: string;
+  keywords: string[];
+  difficulty: "easy" | "medium" | "hard";
+  categoryId: string;
+  /** RPG situation context for the agent to role-play */
+  situation: string;
+}
+
+export interface QACategory {
+  id: string;
+  name: string;
+  description: string;
+  qaPairIds: string[];
+}
+
+export interface GamePlan {
+  categories: QACategory[];
+  qaPairs: QAPair[];
+  /** One agent per category */
+  agents: Agent[];
+  /** Dedicated pedagogical agent for learning mode */
+  learningAgent: Agent;
+  scenario: Scenario;
+}
+
+export type InteractionPhase = "ASKING" | "REPHRASING" | "LEARNING" | "RE_ASKING" | "COMPLETE";
+
+export interface InteractionState {
+  phase: InteractionPhase;
+  currentCategoryIndex: number;
+  currentQAIndex: number;
+  /** 0 = first attempt, 1 = rephrased, 2 = sent to learning */
+  failCount: number;
+  completedQAs: string[];
+  failedQAs: string[];
+  currentQAPairId: string;
 }
 
 // ============================================
