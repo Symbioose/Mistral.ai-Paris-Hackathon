@@ -316,7 +316,7 @@ function getWeakestSkills(profile: SkillProfile, mastery: Record<string, SkillPr
 function initMastery(profile: SkillProfile): Record<string, SkillProgress> {
   return profile.skills.reduce<Record<string, SkillProgress>>((acc, skill) => {
     acc[skill.id] = {
-      masteryScore: 50,
+      masteryScore: 0,
       confidence: 0.5,
       attempts: 0,
       failurePatterns: [],
@@ -719,7 +719,7 @@ function buildRecommendation(entry: SkillReportEntry): SkillRecommendation {
 function buildSimulationReport(profile: SkillProfile, mastery: Record<string, SkillProgress>): SimulationReport {
   const skills: SkillReportEntry[] = profile.skills.map((skill) => {
     const progress = mastery[skill.id] || {
-      masteryScore: 50,
+      masteryScore: 0,
       confidence: 0.5,
       attempts: 0,
       failurePatterns: [],

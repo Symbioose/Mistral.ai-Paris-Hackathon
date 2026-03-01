@@ -29,7 +29,7 @@ export function initializeGameState(
 
   const scores = setup.evaluation_grid.map((entry: EvaluationTopic) => ({
     topic: entry.topic,
-    score: 50,
+    score: 0,
     weight: entry.weight,
   }));
 

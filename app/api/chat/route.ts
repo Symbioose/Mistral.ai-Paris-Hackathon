@@ -381,10 +381,10 @@ export async function POST(req: NextRequest) {
   if (!gamePlan || !interactionState || !currentQA) {
     // Fallback: no game plan, just have the agent talk
     agentPrompt = isKickoff
-      ? "Presente-toi brievement et pose une premiere question au joueur. 2 phrases max."
-      : `Le joueur a dit: "${safePlayerMessage}". Reagis brievement et pose une question. 2 phrases max.`;
+      ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
+      : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
   } else if (phase === "COMPLETE") {
-    agentPrompt = "La simulation est terminee. Donne un bilan encourageant en 2 phrases.";
+    agentPrompt = "La simulation est terminee. Donne un bilan encourageant. 15 mots max.";
     simulationComplete = true;
   } else if (phase === "LEARNING") {
     // Learning mode: check if player confirmed understanding
@@ -396,40 +396,22 @@ export async function POST(req: NextRequest) {
         switchToAgentId = catAgent.id;
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
-        agentPrompt = `Le joueur vient d'apprendre la reponse. Repose cette question differemment: "${currentQA.question}". Mets-le en situation avec: ${currentQA.situation}. 2 phrases max.`;
+        agentPrompt = `Le joueur vient d'apprendre la reponse. Repose cette question differemment: "${currentQA.question}". 15 mots max.`;
       }
     } else if (isKickoff) {
       // Learning agent kickoff — explain the answer
-      agentPrompt = `Le joueur n'a pas reussi a repondre a cette question: "${currentQA.question}"
-
-La bonne reponse est: "${currentQA.expected_answer}"
-
-Explique clairement pourquoi c'est la bonne reponse. Sois pedagogique et bienveillant. 3 phrases max. Termine par "Dites-moi quand vous avez compris" ou equivalent.`;
+      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse est: "${currentQA.expected_answer}". Explique pourquoi brievement. Termine par "Compris ?" ou equivalent. 20 mots max.`;
     } else {
       // Player said something but didn't confirm — continue explaining
-      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Il n'a pas encore confirme qu'il a compris.
-La question etait: "${currentQA.question}" et la reponse: "${currentQA.expected_answer}".
-Continue a expliquer differemment. Sois patient. 2 phrases max. Redemande s'il a compris.`;
+      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication brievement. Redemande s'il a compris. 15 mots max.`;
     }
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
     const isFirst = gameState.conversationHistory.length === 0;
     if (isFirst) {
-      agentPrompt = `Tu commences la simulation. Presente-toi en une phrase courte, puis mets le joueur en situation.
-
-Voici la situation a jouer: ${currentQA.situation}
-
-Pose cette question dans ton style personnel: "${currentQA.question}"
-
-IMPORTANT: Ne donne JAMAIS la reponse. Decris la situation, pose la question. 3 phrases max.`;
+      agentPrompt = `Tu commences la simulation. Presente-toi en 5 mots, puis pose cette question: "${currentQA.question}". 15 mots max au total. Ne donne JAMAIS la reponse.`;
     } else {
-      agentPrompt = `Tu prends la parole dans la simulation en cours.
-
-Voici la situation a jouer: ${currentQA.situation}
-
-Pose cette question dans ton style personnel: "${currentQA.question}"
-
-IMPORTANT: Ne donne JAMAIS la reponse. 2 phrases max.`;
+      agentPrompt = `Pose cette question dans ton style personnel: "${currentQA.question}". 15 mots max. Ne donne JAMAIS la reponse.`;
     }
   } else {
     // ASKING or RE_ASKING — player answered, evaluate
@@ -438,8 +420,14 @@ IMPORTANT: Ne donne JAMAIS la reponse. 2 phrases max.`;
 
     if (evalResult.correct) {
       // Correct answer!
-      const scoreDelta = interactionState.failCount === 0 ? 15 : interactionState.failCount === 1 ? 8 : 3;
       const cat = gamePlan.categories[interactionState.currentCategoryIndex];
+      const numQuestions = cat?.qaPairIds.length || 1;
+      const maxPointsPerQuestion = 100 / numQuestions;
+
+      // first try: full points, second: 60%, third (after learning): 30%
+      const multiplier = interactionState.failCount === 0 ? 1.0 : interactionState.failCount === 1 ? 0.6 : 0.3;
+      const scoreDelta = Math.round(maxPointsPerQuestion * multiplier);
+
       if (cat) scoreUpdate = { categoryName: cat.name, delta: scoreDelta };
 
       nextState.completedQAs = [...interactionState.completedQAs, currentQA.id];
@@ -451,7 +439,7 @@ IMPORTANT: Ne donne JAMAIS la reponse. 2 phrases max.`;
         // All done!
         nextState.phase = "COMPLETE";
         simulationComplete = true;
-        agentPrompt = `Le joueur a bien repondu. Felicite-le brievement. La simulation est terminee. Donne un bilan positif en 2 phrases.`;
+        agentPrompt = `Le joueur a bien repondu. Felicite-le brievement. La simulation est terminee. Bilan final en 15 mots max.`;
       } else if (next.categoryChanged) {
         // Category done — switch agent
         nextState.currentCategoryIndex = next.nextCategoryIndex;
@@ -467,7 +455,7 @@ IMPORTANT: Ne donne JAMAIS la reponse. 2 phrases max.`;
           switchToAgentId = nextAgent.id;
         }
 
-        agentPrompt = `Le joueur a bien repondu a la derniere question de ta categorie. Felicite-le en une phrase courte. *Une nouvelle phase commence.*`;
+        agentPrompt = `Le joueur a bien repondu. Felicite-le en 5 mots. *Une nouvelle phase commence.*`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -476,19 +464,17 @@ IMPORTANT: Ne donne JAMAIS la reponse. 2 phrases max.`;
         nextState.phase = "ASKING";
         const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
 
-        agentPrompt = `Le joueur a bien repondu. Reagis positivement en quelques mots, puis enchaine directement.
-
-Prochaine situation: ${nextQA?.situation || ""}
-Prochaine question a poser: "${nextQA?.question || ""}"
-
-Enchaine naturellement. 2-3 phrases max. Ne donne JAMAIS la reponse.`;
+        agentPrompt = `Le joueur a bien repondu. Reagis brievement, puis pose la prochaine question: "${nextQA?.question || ""}". 15 mots max.`;
       }
     } else {
       // Wrong answer
+      const cat = gamePlan.categories[interactionState.currentCategoryIndex];
+      const numQuestions = cat?.qaPairIds.length || 1;
+      const maxPointsPerQuestion = 100 / numQuestions;
+
       if (isReAsking) {
         // Already in re-asking after learning — be generous, advance anyway
-        const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-        if (cat) scoreUpdate = { categoryName: cat.name, delta: -2 };
+        if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.15) };
         nextState.completedQAs = [...interactionState.completedQAs, currentQA.id];
         nextState.failCount = 0;
 
@@ -496,7 +482,7 @@ Enchaine naturellement. 2-3 phrases max. Ne donne JAMAIS la reponse.`;
         if (!next.hasNext) {
           nextState.phase = "COMPLETE";
           simulationComplete = true;
-          agentPrompt = "Ce n'est pas exactement ca, mais tu as fait de ton mieux. La simulation est terminee. Bilan en 2 phrases.";
+          agentPrompt = "Pas grave, on termine la. Bilan final en 15 mots max.";
         } else if (next.categoryChanged) {
           nextState.currentCategoryIndex = next.nextCategoryIndex;
           nextState.currentQAIndex = next.nextQAIndex;
@@ -505,30 +491,25 @@ Enchaine naturellement. 2-3 phrases max. Ne donne JAMAIS la reponse.`;
           shouldAdvanceAct = true;
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
-          agentPrompt = "Pas grave, on avance. *Transition vers une nouvelle phase.* Dis au joueur qu'on passe a la suite.";
+          agentPrompt = "On passe a la suite. Dis-le brievement. 10 mots max.";
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
           nextState.currentQAPairId = nextQAId;
           nextState.phase = "ASKING";
           const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
-          agentPrompt = `Pas grave, on continue. Prochaine situation: ${nextQA?.situation || ""}. Question: "${nextQA?.question || ""}". 2 phrases max.`;
+          agentPrompt = `Pas grave, on continue. Question: "${nextQA?.question || ""}". 15 mots max.`;
         }
       } else if (interactionState.failCount === 0) {
         // First fail — rephrase
-        const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-        if (cat) scoreUpdate = { categoryName: cat.name, delta: -3 };
+        if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.2) };
         nextState.failCount = 1;
         nextState.phase = "REPHRASING";
 
-        agentPrompt = `Le joueur n'a pas bien repondu (${evalResult.feedback}). Dis "Pas tout a fait" ou equivalent, puis reformule la MEME question differemment.
-
-Question originale: "${currentQA.question}"
-Reformule de maniere plus simple et concrete. Donne un indice subtil SANS donner la reponse. 2 phrases max.`;
+        agentPrompt = `Le joueur n'a pas bien repondu. Reformule la MEME question differemment: "${currentQA.question}". Donne un indice subtil. 15 mots max.`;
       } else {
         // Second fail — switch to learning mode
-        const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-        if (cat) scoreUpdate = { categoryName: cat.name, delta: -5 };
+        if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
         nextState.failCount = 2;
         nextState.phase = "LEARNING";
         nextState.failedQAs = [...interactionState.failedQAs, currentQA.id];
@@ -536,7 +517,7 @@ Reformule de maniere plus simple et concrete. Donne un indice subtil SANS donner
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe une deuxieme fois. Dis quelque chose comme "On va demander de l'aide" ou "Je passe la parole a la formatrice". 1 phrase max.`;
+        agentPrompt = `Le joueur s'est trompe. Dis que tu passes la main a la formatrice. 10 mots max.`;
       }
     }
   }
@@ -617,7 +598,7 @@ Reformule de maniere plus simple et concrete. Donne un indice subtil SANS donner
     { role: "system" as const, content: activeAgentState.systemPrompt },
     {
       role: "system" as const,
-      content: `REGLES: 3 phrases MAX. Pas de markdown. Utilise *asterisques* uniquement pour les descriptions de scene (ex: *Le telephone sonne*). Ne donne JAMAIS la reponse dans ta question.`,
+      content: `REGLE CRITIQUE : 15 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.`,
     },
     ...safeHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: "system" as const, content: agentPrompt },
@@ -633,7 +614,7 @@ Reformule de maniere plus simple et concrete. Donne un indice subtil SANS donner
     model: vercelMistral("mistral-large-latest"),
     messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })),
     temperature: 0.5,
-    maxOutputTokens: 150,
+    maxOutputTokens: 100, // Reduced to enforce brevity
   });
 
   const encoder = new TextEncoder();

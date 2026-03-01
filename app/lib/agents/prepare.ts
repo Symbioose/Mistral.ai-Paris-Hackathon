@@ -185,13 +185,14 @@ REGLES AGENTS:
 - Chaque agent correspond a UNE categorie et a une personnalite distincte
 - voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, calm_narrator, gruff_veteran
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
-- intro_line: reaction a la situation, pas une presentation generique
+- intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
 
 AGENT PEDAGOGIQUE (learningAgent):
 - voice_type: "warm_female"
 - Personnalite: patiente, bienveillante, pedagogique
 - Role: "Formatrice"
+- intro_line: "Bonjour, je suis la formatrice. Je vais vous aider." (15 mots max)
 - S'active quand le joueur echoue 2 fois — explique la bonne reponse
 
 SCENARIO:
@@ -210,7 +211,7 @@ JSON strict:
       "voice_type": "authoritative_male",
       "motivation": "Ce que ce personnage veut",
       "knowledge_topics": ["sujet1", "sujet2"],
-      "intro_line": "Phrase d'intro sans apostrophe typographique",
+      "intro_line": "15 mots max. Pas d'asterisques.",
       "relationship_to_player": "Relation avec le joueur"
     }
   ],
@@ -222,7 +223,7 @@ JSON strict:
     "voice_type": "warm_female",
     "motivation": "Aider le joueur a comprendre",
     "knowledge_topics": [],
-    "intro_line": "Je vais vous expliquer cela clairement.",
+    "intro_line": "15 mots max. Pas d'asterisques.",
     "relationship_to_player": "Formatrice bienveillante"
   },
   "scenario": {
