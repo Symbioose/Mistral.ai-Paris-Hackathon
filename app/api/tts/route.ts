@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     voice_settings: {
       stability: params.stability,
       similarity_boost: params.similarity_boost,
-      style: 0.3,
+      style: params.style ?? 0.3,
       use_speaker_boost: true,
     },
   });

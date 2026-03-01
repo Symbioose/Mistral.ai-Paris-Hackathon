@@ -147,12 +147,14 @@ export default function SkillsReportDashboard({
   const executiveSummary = report?.executiveSummary || "";
   const actionPlan7Days = report?.actionablePlan7Days || [];
   const decisionTrace = report?.decisionTrace || [];
+  const failurePatterns = report?.failurePatternAnalysis || [];
+  const employeeVibe = report?.employeeVibe;
 
   return (
     <div
       style={{
-        minHeight: "100vh",
-        width: "100vw",
+        position: "fixed",
+        inset: 0,
         background: "linear-gradient(135deg, #0a0a0f 0%, #0f0f1a 40%, #0a0a0f 100%)",
         color: "#F3F0E6",
         padding: "28px 20px",
@@ -320,6 +322,104 @@ export default function SkillsReportDashboard({
           </section>
         )}
 
+        {/* ── FAILURE PATTERNS + EMPLOYEE VIBE ── */}
+        {(failurePatterns.length > 0 || employeeVibe) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+
+            {/* Failure Pattern Analysis */}
+            <section style={{ border: "2px solid rgba(230,126,34,0.4)", background: "rgba(230,126,34,0.06)", padding: 16 }}>
+              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#E67E22", margin: "0 0 10px" }}>
+                Patterns d&apos;erreur detectes
+              </h2>
+              {failurePatterns.length === 0 ? (
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucun pattern recurrent identifie.</p>
+              ) : (
+                failurePatterns.map((fp, idx) => (
+                  <div key={`fp-${idx}`} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid rgba(230,126,34,0.15)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", fontWeight: 700 }}>
+                        {fp.pattern}
+                      </span>
+                      <span style={{
+                        fontFamily: "'VT323', monospace", fontSize: 16, color: "#E67E22",
+                        background: "rgba(230,126,34,0.15)", padding: "2px 8px",
+                      }}>
+                        x{fp.frequency}
+                      </span>
+                    </div>
+                    {fp.affectedSkills.length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
+                        {fp.affectedSkills.map((skill) => (
+                          <span key={skill} style={{
+                            fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#E67E22",
+                            border: "1px solid rgba(230,126,34,0.3)", padding: "2px 6px",
+                            letterSpacing: "0.08em", textTransform: "uppercase",
+                          }}>
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {fp.recommendation && (
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#8E8B82", margin: 0 }}>
+                        {fp.recommendation}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+
+            {/* Employee Vibe */}
+            <section style={{ border: "2px solid rgba(74,217,168,0.4)", background: "rgba(74,217,168,0.06)", padding: 16 }}>
+              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4AD9A8", margin: "0 0 10px" }}>
+                Vibe de l&apos;employe
+              </h2>
+              {employeeVibe ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>
+                        Ton general
+                      </p>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#4AD9A8", fontWeight: 700, margin: 0 }}>
+                        {employeeVibe.tone}
+                      </p>
+                    </div>
+                    <div>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>
+                        Resistance au stress
+                      </p>
+                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#4AD9A8", fontWeight: 700, margin: 0 }}>
+                        {employeeVibe.stressResilience}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ borderTop: "1px solid rgba(74,217,168,0.15)", paddingTop: 8, marginBottom: 10 }}>
+                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", lineHeight: 1.6, margin: 0 }}>
+                      {employeeVibe.overallAssessment}
+                    </p>
+                  </div>
+                  {employeeVibe.details.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {employeeVibe.details.map((detail, idx) => (
+                        <div key={`vibe-${idx}`} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                          <div style={{ width: 3, height: 3, background: "#4AD9A8", marginTop: 5, flexShrink: 0 }} />
+                          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#8E8B82", margin: 0, lineHeight: 1.4 }}>
+                            {detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Analyse non disponible.</p>
+              )}
+            </section>
+          </div>
+        )}
+
         {/* ── AUTO-ANALYSIS ── */}
         {useMultiAgent && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
@@ -451,46 +551,24 @@ export default function SkillsReportDashboard({
           </>
         )}
 
-        {(actionPlan7Days.length > 0 || decisionTrace.length > 0) && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-            <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.05)", padding: 14 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 8px" }}>
-                Recommandation actionnable a 7 jours
-              </h2>
-              {actionPlan7Days.length === 0 ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucun plan detaille disponible.</p>
-              ) : (
-                actionPlan7Days.slice(0, 7).map((item, idx) => (
-                  <p key={`${idx}-${item.slice(0, 12)}`} style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: "0 0 8px" }}>
-                    {idx + 1}. {item}
+        {actionPlan7Days.length > 0 && (
+          <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.05)", padding: 14, marginTop: 12 }}>
+            <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 10px" }}>
+              Plan de remédiation immédiat
+            </h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {actionPlan7Days.slice(0, 3).map((item, idx) => (
+                <div key={`${idx}-${item.slice(0, 12)}`} style={{ background: "rgba(74,144,217,0.08)", border: "1px solid rgba(74,144,217,0.2)", padding: "10px 12px" }}>
+                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#4A90D9", margin: "0 0 4px", letterSpacing: "0.1em" }}>
+                    ACTION {idx + 1}
                   </p>
-                ))
-              )}
-            </section>
-
-            <section style={{ border: "2px solid rgba(217,168,74,0.3)", background: "rgba(217,168,74,0.06)", padding: 14 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#D9A84A", margin: "0 0 8px" }}>
-                Trace decisionnelle
-              </h2>
-              {decisionTrace.length === 0 ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Trace indisponible.</p>
-              ) : (
-                decisionTrace.map((entry) => (
-                  <article key={`${entry.step}-${entry.playerDecision.slice(0, 10)}`} style={{ paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid rgba(217,168,74,0.2)" }}>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#D9A84A", margin: "0 0 4px" }}>
-                      Etape {entry.step} · {entry.skillsInvolved.join(", ") || "n/a"}
-                    </p>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: "0 0 4px" }}>
-                      Decision: {entry.playerDecision}
-                    </p>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#C4C0B5", margin: 0 }}>
-                      Impact: {entry.impact}
-                    </p>
-                  </article>
-                ))
-              )}
-            </section>
-          </div>
+                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: 0, lineHeight: 1.5 }}>
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* ── FOOTER ── */}

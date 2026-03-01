@@ -23,7 +23,6 @@ interface ObjectiveHUDProps {
   currentAct: number;
   totalActs: number;
   totalScore: number;
-  scoreDelta: number | null;
 }
 
 export default function ObjectiveHUD({

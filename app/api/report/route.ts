@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { mistralChat } from "@/app/lib/agents/mistral-client";
-import { ManagerAssessment, MultiAgentGameState, SimulationReport } from "@/app/lib/types";
+import { ManagerAssessment, MultiAgentGameState, SimulationReport, FailurePattern, EmployeeVibe } from "@/app/lib/types";
 
 type ReportRequest = {
   gameState: MultiAgentGameState;
@@ -108,6 +108,37 @@ function buildFallbackReport(gameState: MultiAgentGameState, assessments: Manage
 
   const totalScore = computeWeightedScore(gameState.scores);
 
+  // Fallback failure pattern analysis from score data
+  const failurePatternAnalysis: FailurePattern[] = sortedGaps
+    .filter((s) => s.masteryScore < 60)
+    .slice(0, 3)
+    .map((s) => ({
+      pattern: `Difficulte recurrente sur "${s.name}"`,
+      frequency: Math.max(1, s.failurePatterns.length),
+      affectedSkills: [s.name],
+      recommendation: `Renforcement cible sur ${s.name} via micro-sessions pratiques.`,
+    }));
+
+  // Fallback employee vibe from conversation analysis
+  const playerMessages = gameState.conversationHistory.filter((m) => m.role === "user");
+  const avgLength = playerMessages.length > 0
+    ? playerMessages.reduce((acc, m) => acc + m.content.length, 0) / playerMessages.length
+    : 0;
+  const employeeVibe: EmployeeVibe = {
+    tone: avgLength > 80 ? "Detaille et methodique" : avgLength > 30 ? "Concis et direct" : "Hesitant et bref",
+    stressResilience: totalScore >= 70 ? "Bonne resistance" : totalScore >= 45 ? "Resistance moyenne" : "Fragile sous pression",
+    overallAssessment: totalScore >= 70
+      ? "Collaborateur engage, repond avec assurance."
+      : totalScore >= 45
+        ? "Collaborateur volontaire mais manque de confiance sur certains sujets."
+        : "Collaborateur en difficulte, necessite un accompagnement rapproche.",
+    details: [
+      `${playerMessages.length} interactions enregistrees.`,
+      `Longueur moyenne des reponses: ${Math.round(avgLength)} caracteres.`,
+      totalScore >= 60 ? "A su maintenir son calme face aux agents." : "Signes d'hesitation detectes face a la pression des agents.",
+    ],
+  };
+
   return {
     generatedAt: new Date().toISOString(),
     globalWeightedScore: totalScore,
@@ -121,13 +152,13 @@ function buildFallbackReport(gameState: MultiAgentGameState, assessments: Manage
           ? "Niveau intermédiaire: des acquis existent, mais plusieurs compétences critiques restent fragiles."
           : "Niveau insuffisant sur les points critiques: plan de remédiation prioritaire requis.",
     actionablePlan7Days: [
-      "Jour 1: briefing manager de 20 minutes sur les 3 lacunes critiques.",
-      "Jour 2-3: micro-sessions ciblées (15 minutes) sur les procédures non maîtrisées.",
-      "Jour 4: simulation courte focalisée sur les compétences à risque élevé.",
-      "Jour 5: debrief structuré avec preuves et erreurs récurrentes.",
-      "Jour 6-7: nouvelle simulation de validation et décision de certification interne.",
+      "Briefing manager 20 min sur les 3 lacunes prioritaires.",
+      "Micro-sessions ciblées sur les procédures non maîtrisées.",
+      "Nouvelle simulation de validation en fin de semaine.",
     ],
     decisionTrace,
+    failurePatternAnalysis,
+    employeeVibe,
   };
 }
 
@@ -169,7 +200,7 @@ function sanitizeReport(raw: unknown, fallback: SimulationReport): SimulationRep
     : fallback.recommendations;
 
   const actionablePlan7Days = Array.isArray(data.actionablePlan7Days)
-    ? data.actionablePlan7Days.map(String).slice(0, 7)
+    ? data.actionablePlan7Days.map(String).slice(0, 3)
     : fallback.actionablePlan7Days;
 
   const decisionTrace = Array.isArray(data.decisionTrace)
@@ -187,6 +218,33 @@ function sanitizeReport(raw: unknown, fallback: SimulationReport): SimulationRep
         .filter((d) => d.playerDecision)
     : fallback.decisionTrace;
 
+  // Parse failure pattern analysis
+  const failurePatternAnalysis: FailurePattern[] = Array.isArray(data.failurePatternAnalysis)
+    ? data.failurePatternAnalysis
+        .map((p) => {
+          const x = p as Record<string, unknown>;
+          return {
+            pattern: String(x.pattern || ""),
+            frequency: clamp(Number(x.frequency || 1), 1, 10),
+            affectedSkills: Array.isArray(x.affectedSkills) ? x.affectedSkills.map(String).slice(0, 4) : [],
+            recommendation: String(x.recommendation || ""),
+          };
+        })
+        .filter((p) => p.pattern)
+        .slice(0, 2)
+    : fallback.failurePatternAnalysis || [];
+
+  // Parse employee vibe
+  const rawVibe = data.employeeVibe as Record<string, unknown> | undefined;
+  const employeeVibe: EmployeeVibe = rawVibe && typeof rawVibe === "object"
+    ? {
+        tone: String(rawVibe.tone || fallback.employeeVibe?.tone || "Non evalue"),
+        stressResilience: String(rawVibe.stressResilience || fallback.employeeVibe?.stressResilience || "Non evalue"),
+        overallAssessment: String(rawVibe.overallAssessment || fallback.employeeVibe?.overallAssessment || "Non evalue"),
+        details: Array.isArray(rawVibe.details) ? rawVibe.details.map(String).slice(0, 2) : fallback.employeeVibe?.details || [],
+      }
+    : fallback.employeeVibe || { tone: "Non evalue", stressResilience: "Non evalue", overallAssessment: "Non evalue", details: [] };
+
   return {
     ...fallback,
     globalWeightedScore: clamp(Number(data.globalWeightedScore || fallback.globalWeightedScore), 0, 100),
@@ -195,6 +253,8 @@ function sanitizeReport(raw: unknown, fallback: SimulationReport): SimulationRep
     recommendations: recommendations.length > 0 ? recommendations : fallback.recommendations,
     actionablePlan7Days,
     decisionTrace,
+    failurePatternAnalysis,
+    employeeVibe,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -231,12 +291,71 @@ export async function POST(req: NextRequest) {
         },
         {
           role: "user",
-          content: `Contexte:\n- Document: ${String(body.documentFilename || "Document interne")}\n- Scenario: ${gameState.scenario.title}\n- Acte atteint: ${gameState.currentAct}/${gameState.scenario.acts.length}\n- Score global actuel: ${gameState.totalScore}/100\n\nScores par skill:\n${JSON.stringify(gameState.scores)}\n\nEvenements:\n${gameState.triggeredEvents.slice(-8).join("\n") || "Aucun"}\n\nHistorique recent:\n${condensedHistory || "Vide"}\n\nExtrait document:\n${docExcerpt || "Non fourni"}\n\nRetourne un JSON avec ces champs:\n{\n  "executiveSummary": string,\n  "globalWeightedScore": number,\n  "topCriticalGaps": [{\n    "skillId": string,\n    "skillName": string,\n    "criticality": "low"|"medium"|"high",\n    "masteryScore": number,\n    "confidence": number,\n    "failurePatterns": string[],\n    "evidenceExcerpts": string[],\n    "managerNote": string\n  }],\n  "recommendations": [{\n    "skillId": string,\n    "skillName": string,\n    "priority": "low"|"medium"|"high",\n    "recommendation": string\n  }],\n  "actionablePlan7Days": string[],\n  "decisionTrace": [{\n    "step": number,\n    "situation": string,\n    "playerDecision": string,\n    "impact": string,\n    "skillsInvolved": string[]\n  }]\n}\n\nContraintes:\n- Plan 7 jours: max 7 items, actionnables, verifiables.\n- Decision trace: 3 a 6 etapes max, uniquement des faits plausibles issus de l'historique.\n- Recommandations concises, orientées remédiation entreprise.`,
+          content: `Contexte:
+- Document: ${String(body.documentFilename || "Document interne")}
+- Scenario: ${gameState.scenario.title}
+- Acte atteint: ${gameState.currentAct}/${gameState.scenario.acts.length}
+- Score global actuel: ${gameState.totalScore}/100
+- Questions echouees: ${gameState.interactionState?.failedQAs?.join(", ") || "Aucune"}
+
+Scores par skill:
+${JSON.stringify(gameState.scores)}
+
+Evenements:
+${gameState.triggeredEvents.slice(-8).join("\n") || "Aucun"}
+
+Historique recent (les reponses du joueur sont cles pour l'analyse):
+${condensedHistory || "Vide"}
+
+Extrait document:
+${docExcerpt || "Non fourni"}
+
+Retourne un JSON CONCIS avec ces champs:
+{
+  "executiveSummary": "1-2 phrases courtes, directes, actionnables.",
+  "globalWeightedScore": number,
+  "topCriticalGaps": [{
+    "skillId": string,
+    "skillName": string,
+    "criticality": "low"|"medium"|"high",
+    "masteryScore": number,
+    "confidence": number,
+    "failurePatterns": ["pattern en 5 mots max"],
+    "evidenceExcerpts": ["1 citation courte"],
+    "managerNote": "10 mots max."
+  }],
+  "recommendations": [{
+    "skillId": string,
+    "skillName": string,
+    "priority": "low"|"medium"|"high",
+    "recommendation": "Action en 10 mots max"
+  }],
+  "actionablePlan7Days": ["Action 1 en 10 mots", "Action 2 en 10 mots", "Action 3 en 10 mots"],
+  "failurePatternAnalysis": [{
+    "pattern": "Pattern recurrent en 1 phrase courte",
+    "frequency": number,
+    "affectedSkills": ["skill1"],
+    "recommendation": "Remediation en 1 phrase."
+  }],
+  "employeeVibe": {
+    "tone": "3-4 mots (ex: Professionnel et pose)",
+    "stressResilience": "1 phrase courte",
+    "overallAssessment": "1-2 phrases max",
+    "details": ["Observation 1", "Observation 2"]
+  }
+}
+
+Contraintes STRICTES:
+- topCriticalGaps: 2-3 items max. managerNote = 10 mots max.
+- actionablePlan7Days: exactement 3 items, 10 mots max chacun.
+- failurePatternAnalysis: 1-2 patterns max.
+- employeeVibe.details: exactement 2 items.
+- Tout le JSON doit etre COURT et PERCUTANT. Pas de phrases longues.`,
         },
       ],
       responseFormat: { type: "json_object" },
       temperature: 0.2,
-      maxTokens: 1800,
+      maxTokens: 1200,
       timeoutMs: 20000,
     });
 

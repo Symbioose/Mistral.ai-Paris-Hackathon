@@ -75,6 +75,20 @@ export interface SkillRecommendation {
   priority: "high" | "medium" | "low";
 }
 
+export interface FailurePattern {
+  pattern: string;
+  frequency: number;
+  affectedSkills: string[];
+  recommendation: string;
+}
+
+export interface EmployeeVibe {
+  tone: string;
+  stressResilience: string;
+  overallAssessment: string;
+  details: string[];
+}
+
 export interface SimulationReport {
   generatedAt: string;
   globalWeightedScore: number;
@@ -90,6 +104,8 @@ export interface SimulationReport {
     impact: string;
     skillsInvolved: string[];
   }>;
+  failurePatternAnalysis?: FailurePattern[];
+  employeeVibe?: EmployeeVibe;
 }
 
 // Function call types from Mistral
@@ -195,6 +211,14 @@ export interface AgentState {
   interactionCount: number;
 }
 
+export interface SharedMemoryNote {
+  fromAgent: string;
+  toAgent: string;
+  note: string;
+  priority: string;
+  timestamp: number;
+}
+
 export interface MultiAgentGameState {
   scenario: Scenario;
   currentAct: number;
@@ -216,6 +240,8 @@ export interface MultiAgentGameState {
   gamePlan?: GamePlan;
   /** Current interaction state machine position */
   interactionState?: InteractionState;
+  /** Inter-agent shared memory for orchestration synergie */
+  sharedMemory?: SharedMemoryNote[];
 }
 
 // ============================================
@@ -275,7 +301,8 @@ export type FeedItemType =
   | "event_triggered"
   | "eval_decision"
   | "emotion_change"
-  | "learning_mode";
+  | "learning_mode"
+  | "agent_note";
 
 export interface MissionFeedItem {
   id: string;

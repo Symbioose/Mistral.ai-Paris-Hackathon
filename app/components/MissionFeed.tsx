@@ -21,6 +21,7 @@ const FEED_CONFIG: Record<
   eval_decision:   { color: "#9B59B6", label: "EVAL" },
   emotion_change:  { color: "#4AD9A8", label: "EMOTION" },
   learning_mode:   { color: "#7AB648", label: "LEARN" },
+  agent_note:      { color: "#E67E22", label: "NOTE" },
 };
 
 function formatRelativeTime(ts: number): string {
@@ -48,6 +49,8 @@ function buildText(item: MissionFeedItem): string {
       return `${item.agentName || "Agent"} \u2192 ${item.emotion || "?"}`;
     case "learning_mode":
       return item.detail || "Mode apprentissage actif";
+    case "agent_note":
+      return `${item.fromAgent || "?"} \u2709 ${item.toAgent || "?"}: ${item.detail || ""}`;
     default:
       return "";
   }

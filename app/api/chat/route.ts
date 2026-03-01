@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion } from "@/app/lib/types";
+import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion, SharedMemoryNote } from "@/app/lib/types";
 import { mistralChat } from "@/app/lib/agents/mistral-client";
 import { streamText } from "ai";
 import { mistral as vercelMistral } from "@ai-sdk/mistral";
@@ -113,12 +113,18 @@ Agent actif: ${agentName} (${agentRole})
 Phase: ${phase} | Score joueur: ${currentScore}/100
 Contexte: ${scenarioContext}
 
-Analyse la situation et utilise les outils disponibles si pertinent:
-- update_emotion: change l'émotion de l'agent si la situation le justifie
-- trigger_event: déclenche un événement narratif si la tension le permet (max 1 événement toutes les 3 interactions)
-- agent_note: envoie un message inter-agent si utile (ex: alerter un collègue, demander un avis)
+RÈGLES OBLIGATOIRES pour update_emotion (TOUJOURS appeler si le joueur a répondu):
+- Phase ASKING ou RE_ASKING, réponse correcte → émotion = "calm" (soulagé, satisfait)
+- Phase REPHRASING (1ère erreur) → émotion = "stressed" (légèrement contraint)
+- Phase LEARNING (2ème erreur) → émotion = "angry" ou "panicked" selon la personnalité
+- Kickoff initial (sans réponse du joueur) → émotion = "calm"
+- TOUJOURS appeler update_emotion quand le joueur a envoyé un message
 
-Tu peux utiliser 0, 1 ou 2 outils. Ne force pas — n'utilise que si c'est pertinent.`,
+Outils supplémentaires:
+- trigger_event: déclenche un événement narratif dramatique (alarme, appel urgent, revelation). Max 1 toutes les 4 interactions.
+- agent_note: envoie une note interne secrète à un collègue. Crée du drama! Ex: "Attention, ce stagiaire ne maîtrise pas les procédures de sécurité, surveillez-le."
+
+IMPORTANT: Utilise agent_note quand le joueur fait des erreurs répétées — préviens les autres agents.`,
         },
         {
           role: "user",
@@ -396,7 +402,7 @@ export async function POST(req: NextRequest) {
         switchToAgentId = catAgent.id;
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
-        agentPrompt = `Le joueur vient d'apprendre la reponse. Repose cette question differemment: "${currentQA.question}". 15 mots max.`;
+        agentPrompt = `Tres bien, le joueur a compris ! Dis-lui brievement que c'est bon et que tu le repasses a ${catAgent.name} pour la suite. Exemple: "Parfait ! Je vous repasse ${catAgent.name}." 10 mots max.`;
       }
     } else if (isKickoff) {
       // Learning agent kickoff — explain the answer
@@ -408,10 +414,11 @@ export async function POST(req: NextRequest) {
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
     const isFirst = gameState.conversationHistory.length === 0;
+    const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
     if (isFirst) {
-      agentPrompt = `Tu commences la simulation. Presente-toi en 5 mots, puis pose cette question: "${currentQA.question}". 15 mots max au total. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nTu commences la simulation. Joue la scene ci-dessus, presente-toi tres brievement (1 phrase), puis pose cette question naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
     } else {
-      agentPrompt = `Pose cette question dans ton style personnel: "${currentQA.question}". 15 mots max. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nJoue la scene ci-dessus dans ton style puis pose naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
     }
   } else {
     // ASKING or RE_ASKING — player answered, evaluate
@@ -455,7 +462,7 @@ export async function POST(req: NextRequest) {
           switchToAgentId = nextAgent.id;
         }
 
-        agentPrompt = `Le joueur a bien repondu. Felicite-le en 5 mots. *Une nouvelle phase commence.*`;
+        agentPrompt = `Le joueur a bien repondu. Felicite-le en 5 mots puis passe-lui le relais a ${nextAgent?.name || "ton collegue"}. Exemple: "Tres bien ! Je vous passe ${nextAgent?.name || "mon collegue"}." 12 mots max.`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -464,7 +471,8 @@ export async function POST(req: NextRequest) {
         nextState.phase = "ASKING";
         const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
 
-        agentPrompt = `Le joueur a bien repondu. Reagis brievement, puis pose la prochaine question: "${nextQA?.question || ""}". 15 mots max.`;
+        const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
+        agentPrompt = `Bonne reponse, dis-le en 5 mots. ${nextSituation}\nPuis pose naturellement: "${nextQA?.question || ""}". 25 mots max total.`;
       }
     } else {
       // Wrong answer
@@ -491,14 +499,15 @@ export async function POST(req: NextRequest) {
           shouldAdvanceAct = true;
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
-          agentPrompt = "On passe a la suite. Dis-le brievement. 10 mots max.";
+          agentPrompt = `On avance. Passe brievement la main a ${nextAgent?.name || "ton collegue"}. 10 mots max.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
           nextState.currentQAPairId = nextQAId;
           nextState.phase = "ASKING";
           const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
-          agentPrompt = `Pas grave, on continue. Question: "${nextQA?.question || ""}". 15 mots max.`;
+          const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
+          agentPrompt = `Pas grave, on continue. ${nextSituation}\nQuestion: "${nextQA?.question || ""}". 25 mots max.`;
         }
       } else if (interactionState.failCount === 0) {
         // First fail — rephrase
@@ -506,7 +515,8 @@ export async function POST(req: NextRequest) {
         nextState.failCount = 1;
         nextState.phase = "REPHRASING";
 
-        agentPrompt = `Le joueur n'a pas bien repondu. Reformule la MEME question differemment: "${currentQA.question}". Donne un indice subtil. 15 mots max.`;
+        const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
+        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\nReformule autrement en donnant un indice subtil: "${currentQA.question}". 25 mots max.`;
       } else {
         // Second fail — switch to learning mode
         if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
@@ -517,7 +527,7 @@ export async function POST(req: NextRequest) {
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe. Dis que tu passes la main a la formatrice. 10 mots max.`;
+        agentPrompt = `Le joueur s'est trompe 2 fois. Passe naturellement la main a ${gamePlan.learningAgent.name}. Exemple: "Je laisse ${gamePlan.learningAgent.name} vous expliquer." 12 mots max.`;
       }
     }
   }
@@ -594,11 +604,32 @@ export async function POST(req: NextRequest) {
     gameState.scenario?.initial_situation || "",
   );
 
+  // Build shared memory context for the active agent
+  const sharedMemoryNotes = (gameState.sharedMemory || [])
+    .filter((n) => n.toAgent === activeAgentState.agent.name || n.toAgent === "all")
+    .slice(-5);
+  const sharedMemoryContext = sharedMemoryNotes.length > 0
+    ? `\nNOTES INTERNES recues de tes collegues:\n${sharedMemoryNotes.map((n) => `- [${n.priority.toUpperCase()}] ${n.fromAgent}: "${n.note}"`).join("\n")}\nUtilise ces notes pour adapter ton comportement.`
+    : "";
+
+  const currentEmotion = activeAgentState.emotion || "calm";
+  const emotionInstruction = {
+    calm:       "Ton calme, posé, confiant, professionnel.",
+    stressed:   "Ton stressé: phrases courtes, légèrement hésitant, rythme rapide.",
+    angry:      "Ton ferme et direct, peu de politesse, tension perceptible.",
+    panicked:   "Ton paniqué: phrases décousues, exclamations, urgence extrême.",
+    suspicious: "Ton lent et méfiant, questions courtes, peu de confiance.",
+  }[currentEmotion] ?? "Ton professionnel.";
+
   const messages = [
     { role: "system" as const, content: activeAgentState.systemPrompt },
     {
       role: "system" as const,
-      content: `REGLE CRITIQUE : 15 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.`,
+      content: `ÉTAT ÉMOTIONNEL ACTUEL: ${currentEmotion.toUpperCase()} — ${emotionInstruction} Adapte IMPÉRATIVEMENT ton style à cet état.`,
+    },
+    {
+      role: "system" as const,
+      content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
     },
     ...safeHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: "system" as const, content: agentPrompt },
@@ -614,7 +645,7 @@ export async function POST(req: NextRequest) {
     model: vercelMistral("mistral-large-latest"),
     messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })),
     temperature: 0.5,
-    maxOutputTokens: 100, // Reduced to enforce brevity
+    maxOutputTokens: 150, // ~25-30 words to allow situational context
   });
 
   const encoder = new TextEncoder();
@@ -661,6 +692,18 @@ export async function POST(req: NextRequest) {
           name: "agent_note",
           args: { to_agent: orchResult.agentNote.to_agent, note: orchResult.agentNote.note, priority: orchResult.agentNote.priority },
         });
+        // Store in shared memory for cross-agent context
+        const existingMemory = (gameState.sharedMemory || []) as SharedMemoryNote[];
+        patch.sharedMemory = [
+          ...existingMemory,
+          {
+            fromAgent: activeAgentState.agent.name,
+            toAgent: orchResult.agentNote.to_agent,
+            note: orchResult.agentNote.note,
+            priority: orchResult.agentNote.priority,
+            timestamp: Date.now(),
+          },
+        ];
       }
 
       send({ type: "meta", patch, toolCalls });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType, Scenario, GamePlan, InteractionState } from "@/app/lib/types";
+import { GameState, GameAction, GameResponse, INITIAL_GAME_STATE, ManagerAssessment, SimulationReport, MultiAgentGameState, SimulationSetup, AgentState as AgentStateType, Scenario, GamePlan, InteractionState, MissionFeedItem, SharedMemoryNote } from "@/app/lib/types";
 import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
@@ -16,6 +16,7 @@ import KnowledgeHeatmap from "@/app/components/KnowledgeHeatmap";
 import ObjectiveHUD from "@/app/components/ObjectiveHUD";
 import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
 import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
+import MissionFeed from "@/app/components/MissionFeed";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -38,7 +39,7 @@ async function buildAgentPromptClient(
 
 INTERDICTION DE NARRATION : Tu n'es pas un narrateur de RPG. Tu es une vraie personne, en face du joueur, dans le monde de l'entreprise. Ne decris JAMAIS le decor, le contexte ou l'environnement dans ton texte parlé.
 
-REGLE ABSOLUE : Tes repliques doivent faire 15 MOTS MAXIMUM. Une phrase courte d'affirmation, suivie d'une question directe. C'est tout. Sois punchy, presse, et va droit au but.
+REGLE ABSOLUE : Tes repliques doivent faire 25 MOTS MAXIMUM. Structure: 1 phrase courte de mise en contexte (situation, enjeu) + 1 question directe. Sois naturel, comme une vraie personne, pas un robot.
 
 IMPORTANT (VOIX) : Le texte entre *asterisques* est lu par une voix de narrateur différente. Utilise les *asterisques* UNIQUEMENT pour des sons (ex: *Le telephone sonne*) ou des actions physiques brèves. Ne mets JAMAIS tes paroles entre asterisques.
 
@@ -61,13 +62,20 @@ ${otherAgents || "Tu es seul."}
 ${relevantKnowledge.join("\n---\n")}
 
 ## COMMENT INTERAGIR
-- Replique ultra-courte, 15 MOTS MAX.
-- Une affirmation, puis une question directe.
-- Si correct: passe au sujet suivant immediatement.
-- Si faux: corrige en une phrase courte, puis repose autrement.
+- Replique max 25 MOTS.
+- Structure type: [phrase de contexte ou reaction] + [question directe].
+- Exemple OK: "On a un souci technique urgent. Quelle est la premiere procedure a suivre en cas de panne reseau ?"
+- Exemple INTERDIT: "Panne reseau. Procedure. Vous dites quoi." (telegraphique = incomprehensible)
+- Si correct: reagis positivement, passe au sujet suivant immediatement.
+- Si faux: corrige en une phrase courte, donne un indice, repose autrement.
+
+## PASSAGE DE MAIN (HANDOFF)
+- Quand tu passes la main a un collegue, fais une transition naturelle et fluide.
+- Exemple: "C'est pas mon domaine, je vous envoie ma collegue Dupont." ou "Attendez, je vous passe la directrice."
+- Ne dis JAMAIS "je passe la main" de maniere robotique. Sois naturel.
 
 ## REGLE FINALE
-15 mots max. Pas d'asterisques pour tes paroles.`;
+25 mots max. Pas d'asterisques pour tes paroles.`;
 }
 
 function extractPlayableChunks(
@@ -189,6 +197,8 @@ export default function Home() {
 
   // Multi-agent state
   const [multiAgentState, setMultiAgentState] = useState<MultiAgentGameState | null>(null);
+  // Tracks which agent is visually "on screen" — only updates when that agent actually starts speaking.
+  const [displayActiveAgentId, setDisplayActiveAgentId] = useState<string>("");
   const [gameEvents, setGameEvents] = useState<Array<{ id: string; type: string; description: string }>>([]);
   const [learningModeState, setLearningModeState] = useState<{ active: boolean; message: string }>({
     active: false,
@@ -197,6 +207,11 @@ export default function Home() {
   const ragIndexRef = useRef<RagIndex | null>(null);
   // Holds the next state to use for auto-kickoff after an agent switch.
   const autoKickoffStateRef = useRef<MultiAgentGameState | null>(null);
+  // Called by processTtsQueue when queue empties — fires the deferred auto-kickoff.
+  const autoKickoffCallbackRef = useRef<(() => void) | null>(null);
+
+  // ── Mission Feed (orchestration log) ──
+  const [missionFeedItems, setMissionFeedItems] = useState<MissionFeedItem[]>([]);
 
   // ── Mission Control UX state ──
   const [actTransition, setActTransition] = useState<{
@@ -218,11 +233,24 @@ export default function Home() {
   }, []);
 
   // Auto-kickoff: when a switch is scheduled and loading finishes, trigger the new agent's intro.
+  // If TTS is still playing, defer to processTtsQueue via autoKickoffCallbackRef.
   useEffect(() => {
     if (!autoKickoffStateRef.current || isLoading) return;
     const kickoffState = autoKickoffStateRef.current;
     autoKickoffStateRef.current = null;
-    void sendMultiAgentAction("", { kickoff: true, stateOverride: kickoffState });
+    const doKickoff = () => {
+      autoKickoffCallbackRef.current = null;
+      // Immediately switch name + clear old dialogue → user sees the switch happened.
+      setDisplayActiveAgentId(kickoffState.activeAgentId);
+      setGameState((prev) => ({ ...prev, dialogue: "" }));
+      void sendMultiAgentAction("", { kickoff: true, stateOverride: kickoffState });
+    };
+    // If TTS is still running, let it finish first
+    if (isTtsPlayingRef.current || ttsQueueRef.current.length > 0) {
+      autoKickoffCallbackRef.current = doKickoff;
+    } else {
+      doKickoff();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
@@ -328,6 +356,11 @@ export default function Home() {
       isTtsPlayingRef.current = false;
       if (ttsQueueRef.current.length > 0 && !isRecordingRef.current) {
         void processTtsQueue();
+      } else if (ttsQueueRef.current.length === 0 && autoKickoffCallbackRef.current) {
+        // TTS queue fully drained — fire the deferred agent switch kickoff
+        const cb = autoKickoffCallbackRef.current;
+        autoKickoffCallbackRef.current = null;
+        cb();
       }
     }
   }, [getOrCreateTtsPromise]);
@@ -343,8 +376,10 @@ export default function Home() {
       generation,
     };
     ttsQueueRef.current.push(chunk);
+    // Immediately start fetching TTS so it's ready when processTtsQueue gets to it.
+    void getOrCreateTtsPromise(chunk);
     void processTtsQueue();
-  }, [processTtsQueue]);
+  }, [processTtsQueue, getOrCreateTtsPromise]);
 
   const applyActions = useCallback((actions: GameAction[]) => {
     const nextAssessments = actions
@@ -392,11 +427,13 @@ export default function Home() {
     const baseState = options?.stateOverride || multiAgentState;
     if (!baseState) return;
     setIsLoading(true);
+    // Show the speaking agent immediately — don't wait for streaming to end.
+    setDisplayActiveAgentId(baseState.activeAgentId);
 
     try {
       const speakingAgent = baseState.agents.find((a) => a.agent.id === baseState.activeAgentId);
       const voiceTypeForTurn = speakingAgent?.agent.voice_type || "calm_narrator";
-      const emotionForTurn = speakingAgent?.emotion || "calm";
+      let emotionForTurn = speakingAgent?.emotion || "calm";
 
       ttsGenerationRef.current += 1;
       const currentTtsGeneration = ttsGenerationRef.current;
@@ -439,7 +476,7 @@ export default function Home() {
       let activePatch: Record<string, unknown> = {};
       let lastTokenText = "";
       let ttsBuffer = "";
-      let suppressCurrentTurnOutput = false;
+      const suppressCurrentTurnOutput = false;
 
       const handleSseBlock = (block: string) => {
         const dataMatch = block.match(/^data: (.+)$/m);
@@ -452,9 +489,19 @@ export default function Home() {
             activePatch = event.patch || {};
             const nextActiveId = String((activePatch as Record<string, unknown>).activeAgentId || "");
             const autoKickoff = Boolean((activePatch as Record<string, unknown>).autoKickoff);
+            // Agent switch: let the outgoing agent speak its transition line
+            // (previously suppressed — caused brutal silent switches)
             if (!isKickoff && autoKickoff && nextActiveId && nextActiveId !== baseState.activeAgentId) {
-              suppressCurrentTurnOutput = true;
-              ttsBuffer = "";
+              // No longer suppressing: the outgoing agent's farewell text plays,
+              // then autoKickoffStateRef triggers the new agent's intro.
+            }
+            // Dynamic emotion update from orchestrator — affects TTS for subsequent chunks
+            if (event.toolCalls && Array.isArray(event.toolCalls)) {
+              for (const tc of event.toolCalls) {
+                if (tc.name === "update_emotion" && tc.args?.emotion) {
+                  emotionForTurn = String(tc.args.emotion) as import("@/app/lib/types").AgentEmotion;
+                }
+              }
             }
           } else if (event.type === "token") {
             if (suppressCurrentTurnOutput) return;
@@ -565,7 +612,69 @@ export default function Home() {
         interactionState: nextInteractionState,
       };
 
+      // Also propagate sharedMemory from patch
+      const patchSharedMemory = activePatch.sharedMemory as SharedMemoryNote[] | undefined;
+      if (patchSharedMemory) {
+        computedNextState.sharedMemory = patchSharedMemory;
+      }
+
       setMultiAgentState(computedNextState);
+
+      // ── Mission Feed: populate from toolCalls + state changes ──
+      const speakingAgentName = baseState.agents.find((a) => a.agent.id === speakingAgentId)?.agent.name || "Agent";
+      const newFeedItems: MissionFeedItem[] = [];
+      const toolCallsList = (activePatch as Record<string, unknown>).toolCalls as Array<{ name: string; args: Record<string, unknown> }> | undefined;
+
+      if (Array.isArray(toolCallsList)) {
+        for (const tc of toolCallsList) {
+          if (tc.name === "update_emotion") {
+            newFeedItems.push({
+              id: `feed_emo_${Date.now()}`,
+              type: "emotion_change",
+              timestamp: Date.now(),
+              agentName: speakingAgentName,
+              emotion: String(tc.args.emotion || ""),
+              detail: String(tc.args.reason || ""),
+            });
+          } else if (tc.name === "trigger_event") {
+            newFeedItems.push({
+              id: `feed_evt_${Date.now()}`,
+              type: "event_triggered",
+              timestamp: Date.now(),
+              eventType: String(tc.args.event_type || ""),
+              detail: String(tc.args.description || ""),
+            });
+          } else if (tc.name === "agent_note") {
+            newFeedItems.push({
+              id: `feed_note_${Date.now()}`,
+              type: "agent_note",
+              timestamp: Date.now(),
+              fromAgent: speakingAgentName,
+              toAgent: String(tc.args.to_agent || ""),
+              detail: String(tc.args.note || ""),
+              reason: String(tc.args.priority || "low"),
+            });
+          }
+        }
+      }
+
+      // Score change
+      if (activePatch.totalScore !== undefined) {
+        const delta = nextTotalScore - prevTotalScoreRef.current;
+        if (delta !== 0) {
+          newFeedItems.push({
+            id: `feed_score_${Date.now()}`,
+            type: "score_change",
+            timestamp: Date.now(),
+            scoreDelta: delta,
+            newScore: nextTotalScore,
+          });
+        }
+      }
+
+      if (newFeedItems.length > 0) {
+        setMissionFeedItems((prev) => [...prev, ...newFeedItems]);
+      }
 
       // ── Mission Control: act transition detection ──
       if (nextAct > baseState.currentAct) {
@@ -646,6 +755,16 @@ export default function Home() {
         const switchReason = String(
           (activePatch as Record<string, unknown>).switchReason || "",
         );
+        const switchedToAgent = baseState.agents.find((a) => a.agent.id === nextActiveId);
+        // Feed: agent switch
+        setMissionFeedItems((prev) => [...prev, {
+          id: `feed_switch_${Date.now()}`,
+          type: "agent_switch" as const,
+          timestamp: Date.now(),
+          fromAgent: speakingAgentName,
+          toAgent: switchedToAgent?.agent.name || "?",
+          reason: switchReason || undefined,
+        }]);
         if (switchReason) {
           setGameEvents((prev) => [
             ...prev,
@@ -813,6 +932,7 @@ export default function Home() {
       testedTopics: [],
       gamePlan,
       interactionState,
+      sharedMemory: [],
     };
 
     setMultiAgentState(initialState);
@@ -909,16 +1029,17 @@ export default function Home() {
     setIsReportVisible(false);
     setMultiAgentState(null);
     setGameEvents([]);
+    setMissionFeedItems([]);
     setActTransition(null);
     setSimulationEnd(null);
     setScoreDelta(null);
     prevTotalScoreRef.current = 50;
   }, []);
 
-  // Get active agent for display
-  const activeAgentState = multiAgentState?.agents.find(
-    (a) => a.agent.id === multiAgentState.activeAgentId
-  );
+  // Get active agent for display — use displayActiveAgentId so the name only changes
+  // when the new agent actually starts speaking, not when the patch is received.
+  const displayId = displayActiveAgentId || multiAgentState?.activeAgentId || "";
+  const activeAgentState = multiAgentState?.agents.find((a) => a.agent.id === displayId);
 
   if (isReportVisible) {
     return (
@@ -1085,6 +1206,19 @@ export default function Home() {
   const isMultiAgent = !!multiAgentState;
   const isStalledTurn = gameState.dialogue.trim() === "..." || gameState.dialogue.toLowerCase().includes("connexion perdue");
 
+  // Dynamic emotion background for multi-agent mode
+  const EMOTION_BG_COLOR: Record<string, string> = {
+    calm:       "rgba(74,144,217,0.05)",
+    stressed:   "rgba(217,168,74,0.07)",
+    angry:      "rgba(204,42,42,0.09)",
+    panicked:   "rgba(204,42,42,0.14)",
+    suspicious: "rgba(155,89,182,0.08)",
+  };
+  const activeEmotion = activeAgentState?.emotion || "calm";
+  const emotionBgColor = isMultiAgent
+    ? (EMOTION_BG_COLOR[activeEmotion] ?? EMOTION_BG_COLOR.calm)
+    : "rgba(255,91,34,0.04)";
+
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden", background: "#F3F0E6" }}>
 
@@ -1096,17 +1230,27 @@ export default function Home() {
           <div style={{ position: "absolute", inset: 0, background: isMultiAgent
             ? "linear-gradient(160deg, #0a0a0f 0%, #0f0f1a 40%, #0a0a0f 100%)"
             : "linear-gradient(160deg, #0F0F0F 0%, #1A1A1A 40%, #0A0D0A 100%)" }} />
-          <div style={{ position: "absolute", inset: 0, background: isMultiAgent
-            ? "radial-gradient(ellipse at 40% 60%, rgba(74,144,217,0.04) 0%, transparent 65%)"
-            : "radial-gradient(ellipse at 40% 60%, rgba(255,91,34,0.04) 0%, transparent 65%)" }} />
+          <div style={{
+            position: "absolute",
+            inset: 0,
+            background: `radial-gradient(ellipse at 40% 60%, ${emotionBgColor} 0%, transparent 65%)`,
+            transition: "background 0.8s ease",
+          }} />
           {!isMultiAgent && (
             <div style={{ position: "absolute", inset: 0, opacity: 0.035, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(255,240,230,0.8) 120px, rgba(255,240,230,0.8) 122px)" }} />
           )}
-          <div className="animate-scanline" style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: isMultiAgent ? "rgba(74,144,217,0.06)" : "rgba(255,91,34,0.06)" }} />
+          <div className="animate-scanline" style={{
+            position: "absolute", left: 0, right: 0, top: 0, height: 3,
+            background: isMultiAgent ? emotionBgColor.replace(/[\d.]+\)$/, "0.18)") : "rgba(255,91,34,0.06)",
+            transition: "background 0.8s ease",
+          }} />
           <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.7)" }} />
         </div>
 
-        {/* Event notifications removed — now shown in MissionFeed */}
+        {/* Orchestration Log Feed */}
+        {isMultiAgent && gameState.isGameStarted && (
+          <MissionFeed items={missionFeedItems} isActive={isLoading} />
+        )}
 
         {/* ── TOP BAR ── */}
         <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: isMultiAgent ? "2px solid rgba(74,144,217,0.15)" : "2px solid rgba(255,91,34,0.15)" }}>
