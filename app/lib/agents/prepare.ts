@@ -428,16 +428,20 @@ export async function prepareGamePlan(
 
   try {
     // Step 1: Generate Q&A pairs
-    status("Generation du questionnaire de formation...");
+    status("Analyse du document avec Mistral AI...");
     console.log("[prepare] Step 1: Generating Q&A pairs...");
+    const tokenEstimate = documentText.split(/\s+/).length;
+    status(`Extraction des connaissances (${tokenEstimate} tokens)...`);
     const qaPairs = await generateQAPairs(documentText);
     console.log(`[prepare] Generated ${qaPairs.length} Q&A pairs`);
+    status(`${qaPairs.length} questions generees — validation en cours...`);
 
     // Step 2: Categorize
     status("Organisation des competences en categories...");
     console.log("[prepare] Step 2: Categorizing...");
     const categories = await categorizeQAPairs(qaPairs);
     console.log(`[prepare] Created ${categories.length} categories`);
+    status(`${categories.length} categories identifiees — construction du scenario...`);
 
     // Assign categoryId to each Q&A pair
     for (const cat of categories) {
@@ -460,12 +464,14 @@ export async function prepareGamePlan(
     // Step 3: Generate agents + scenario
     status("Creation des personnages et du scenario...");
     console.log("[prepare] Step 3: Generating agents & scenario...");
+    status("Initialisation des profils d'agents IA...");
     const { agents, learningAgent, scenario } = await generateAgentsAndScenario(
       categories,
       qaPairs,
       documentTitle,
     );
     console.log(`[prepare] Created ${agents.length} agents + learning agent`);
+    status(`${agents.length + 1} agents generes — finalisation...`);
 
     return { categories, qaPairs, agents, learningAgent, scenario };
   } catch (err) {
