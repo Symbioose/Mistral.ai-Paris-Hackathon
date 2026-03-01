@@ -44,13 +44,13 @@ export async function POST(req: NextRequest) {
         // Send scenario
         send({ type: "scenario", data: gamePlan.scenario });
 
-        // Send agents one by one (with delay for animation)
+        // Send agents one by one (with short delay for animation)
         for (const agent of gamePlan.agents) {
-          await delay(220);
+          await delay(80);
           send({ type: "new_agent", data: agent });
         }
         // Send learning agent
-        await delay(220);
+        await delay(80);
         send({ type: "new_agent", data: gamePlan.learningAgent });
 
         // Build evaluation_grid from categories (backward compat with UI)

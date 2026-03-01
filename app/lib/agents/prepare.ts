@@ -79,8 +79,8 @@ JSON strict, aucun texte hors JSON:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,
-    maxTokens: 4000,
-    timeoutMs: 45000,
+    maxTokens: 3000,
+    timeoutMs: 30000,
   });
 
   const raw = String(message.content || "").trim();
@@ -108,7 +108,7 @@ async function categorizeQAPairs(qaPairs: QAPair[]): Promise<QACategory[]> {
   const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" (${qa.difficulty})`).join("\n");
 
   const message = await mistralChat({
-    model: MODEL,
+    model: "mistral-small-latest",
     messages: [
       {
         role: "system",
@@ -137,8 +137,8 @@ JSON strict:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.2,
-    maxTokens: 1500,
-    timeoutMs: 30000,
+    maxTokens: 1000,
+    timeoutMs: 15000,
   });
 
   const raw = String(message.content || "").trim();
@@ -249,8 +249,8 @@ JSON strict:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.4,
-    maxTokens: 3000,
-    timeoutMs: 40000,
+    maxTokens: 2500,
+    timeoutMs: 30000,
   });
 
   const raw = String(message.content || "").trim();
@@ -428,20 +428,22 @@ export async function prepareGamePlan(
   const status = onStatus || (() => {});
 
   try {
+    const t0 = Date.now();
+
     // Step 1: Generate Q&A pairs
     status("Analyse du document avec Mistral AI...");
     console.log("[prepare] Step 1: Generating Q&A pairs...");
-    const tokenEstimate = documentText.split(/\s+/).length;
-    status(`Extraction des connaissances (${tokenEstimate} tokens)...`);
+    const t1 = Date.now();
     const qaPairs = await generateQAPairs(documentText);
-    console.log(`[prepare] Generated ${qaPairs.length} Q&A pairs`);
+    console.log(`[prepare] Step 1 done in ${Date.now() - t1}ms — ${qaPairs.length} Q&A pairs`);
     status(`${qaPairs.length} questions generees — validation en cours...`);
 
     // Step 2: Categorize
     status("Organisation des competences en categories...");
     console.log("[prepare] Step 2: Categorizing...");
+    const t2 = Date.now();
     const categories = await categorizeQAPairs(qaPairs);
-    console.log(`[prepare] Created ${categories.length} categories`);
+    console.log(`[prepare] Step 2 done in ${Date.now() - t2}ms — ${categories.length} categories`);
     status(`${categories.length} categories identifiees — construction du scenario...`);
 
     // Assign categoryId to each Q&A pair
@@ -465,14 +467,16 @@ export async function prepareGamePlan(
     // Step 3: Generate agents + scenario
     status("Creation des personnages et du scenario...");
     console.log("[prepare] Step 3: Generating agents & scenario...");
-    status("Initialisation des profils d'agents IA...");
+    const t3 = Date.now();
     const { agents, learningAgent, scenario } = await generateAgentsAndScenario(
       categories,
       qaPairs,
       documentTitle,
     );
-    console.log(`[prepare] Created ${agents.length} agents + learning agent`);
+    console.log(`[prepare] Step 3 done in ${Date.now() - t3}ms — ${agents.length} agents + learning agent`);
     status(`${agents.length + 1} agents generes — finalisation...`);
+
+    console.log(`[prepare] Total pipeline: ${Date.now() - t0}ms`);
 
     return { categories, qaPairs, agents, learningAgent, scenario };
   } catch (err) {

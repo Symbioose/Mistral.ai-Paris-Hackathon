@@ -516,7 +516,7 @@ export async function POST(req: NextRequest) {
         nextState.phase = "REPHRASING";
 
         const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
-        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\nReformule autrement en donnant un indice subtil: "${currentQA.question}". 25 mots max.`;
+        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\nReformule la question differemment pour l'aider a reflechir: "${currentQA.question}". NE DONNE PAS LA REPONSE, oriente seulement. 25 mots max.`;
       } else {
         // Second fail — switch to learning mode
         if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
