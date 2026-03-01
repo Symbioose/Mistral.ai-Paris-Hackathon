@@ -1,4 +1,4 @@
-# FORMA — Immersive B2B Training Platform
+# YouGotIt — Immersive B2B Training Platform
 
 > **Turn any document into a voice-powered multi-agent RPG simulation in 30 seconds.**
 
@@ -11,11 +11,11 @@ Built for the **Mistral AI Worldwide Hackathon — Paris 2026** · AWS Track
 
 ---
 
-## What is FORMA?
+## What is YouGotIt?
 
 Corporate training has a retention problem. Employees read a 40-page procedure manual, take a multiple-choice quiz, and forget 80% of it within a week.
 
-**FORMA flips the model.** Upload any training document — a safety protocol, a compliance guide, an onboarding manual — and the AI pipeline instantly generates an immersive voice roleplay simulation. Employees learn by *playing*, not reading. HR teams get a real-time view of where their teams actually stand.
+**YouGotIt flips the model.** Upload any training document — a safety protocol, a compliance guide, an onboarding manual — and the AI pipeline instantly generates an immersive voice roleplay simulation. Employees learn by *playing*, not reading. HR teams get a real-time view of where their teams actually stand.
 
 ### How it works
 
@@ -79,7 +79,7 @@ Your Document (PDF/TXT)
 
 ### Mistral Usage
 
-FORMA makes **5 distinct types of Mistral calls**, each carefully tuned:
+YouGotIt makes **5 distinct types of Mistral calls**, each carefully tuned:
 
 | Call | Model | Mode | Purpose |
 |------|-------|------|---------|
