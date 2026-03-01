@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion, SharedMemoryNote } from "@/app/lib/types";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
-import { streamText } from "ai";
-import { mistral as vercelMistral } from "@ai-sdk/mistral";
+import { mistralChat, bedrockClient } from "@/app/lib/agents/mistral-client";
+import OpenAI from "openai";
 
 // ---------------------------------------------------------------------------
 // Mistral Function Calling — Tools for agent orchestration
@@ -144,6 +143,7 @@ IMPORTANT: Utilise agent_note quand le joueur fait des erreurs répétées — p
 
     if (message.tool_calls && Array.isArray(message.tool_calls)) {
       for (const tc of message.tool_calls) {
+        if (tc.type !== "function") continue;
         const fn = tc?.function;
         if (!fn?.name) continue;
         let args: Record<string, unknown> = {};
@@ -641,11 +641,12 @@ export async function POST(req: NextRequest) {
     },
   ];
 
-  const textResult = streamText({
-    model: vercelMistral("mistral-large-latest"),
-    messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })),
+  const streamingPromise = bedrockClient.chat.completions.create({
+    model: "mistral.mistral-large-3-675b-instruct",
+    messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })) as OpenAI.ChatCompletionMessageParam[],
     temperature: 0.5,
-    maxOutputTokens: 150, // ~25-30 words to allow situational context
+    max_tokens: 150,
+    stream: true,
   });
 
   const encoder = new TextEncoder();
@@ -713,8 +714,9 @@ export async function POST(req: NextRequest) {
       let tokenEventCount = 0;
 
       try {
-        for await (const delta of textResult.textStream) {
-          const rawDelta = String(delta || "");
+        const streamingResponse = await streamingPromise;
+        for await (const chunk of streamingResponse) {
+          const rawDelta = chunk.choices[0]?.delta?.content || "";
           if (!rawDelta) continue;
           streamedRaw += rawDelta;
 

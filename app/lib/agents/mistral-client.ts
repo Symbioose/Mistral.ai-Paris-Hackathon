@@ -1,3 +1,5 @@
+import OpenAI from "openai";
+
 interface ToolDefinition {
   type: "function";
   function: {
@@ -15,18 +17,28 @@ interface ChatMessage {
   name?: string;
 }
 
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
+// AWS Bedrock model names (via OpenAI-compatible endpoint)
+const MODEL_LARGE = "mistral.mistral-large-3-675b-instruct";
+const MODEL_SMALL = "mistral.magistral-small-2509";
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+function resolveModel(model: string): string {
+  if (model === "mistral-small-latest") return MODEL_SMALL;
+  return MODEL_LARGE;
 }
+
+// Map Mistral tool_choice "any" → OpenAI "required"
+function resolveToolChoice(
+  toolChoice: "any" | "auto" | "none" | { type: "function"; function: { name: string } } | undefined,
+): OpenAI.ChatCompletionToolChoiceOption | undefined {
+  if (toolChoice === undefined) return undefined;
+  if (toolChoice === "any") return "required";
+  return toolChoice as OpenAI.ChatCompletionToolChoiceOption;
+}
+
+export const bedrockClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseURL: process.env.OPENAI_BASE_URL,
+});
 
 export async function mistralChat(params: {
   model?: string;
@@ -38,42 +50,29 @@ export async function mistralChat(params: {
   timeoutMs?: number;
   responseFormat?: { type: "json_object" };
 }) {
-  const body: Record<string, unknown> = {
-    model: params.model || "mistral-large-latest",
-    messages: params.messages,
-    tools: params.tools,
-    tool_choice: params.toolChoice,
+  const body: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+    model: resolveModel(params.model || "mistral-large-latest"),
+    messages: params.messages as OpenAI.ChatCompletionMessageParam[],
     temperature: params.temperature ?? 0.4,
     max_tokens: params.maxTokens ?? 800,
   };
 
-  // response_format is only valid when NOT using tool_choice (JSON mode).
+  if (params.tools && params.tools.length > 0) {
+    body.tools = params.tools as OpenAI.ChatCompletionTool[];
+    body.tool_choice = resolveToolChoice(params.toolChoice);
+  }
+
   if (params.responseFormat && !params.tools) {
     body.response_format = params.responseFormat;
   }
 
-  const res = await fetchWithTimeout(
-    "https://api.mistral.ai/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${MISTRAL_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    },
-    params.timeoutMs ?? 15000,
-  );
+  const completion = await bedrockClient.chat.completions.create(body, {
+    timeout: params.timeoutMs ?? 15000,
+  });
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Mistral API error (${res.status}): ${errorText}`);
-  }
-
-  const data = await res.json();
-  const message = data?.choices?.[0]?.message;
+  const message = completion.choices[0]?.message;
   if (!message) {
-    throw new Error("Invalid Mistral response: missing message.");
+    throw new Error("Invalid response: missing message.");
   }
 
   return message;

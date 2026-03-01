@@ -1,291 +1,419 @@
-# Architecture Technique — RAG to RPG
+# Architecture Technique — RAG to RPG (v2)
 
 Serious game engine B2B : un document de formation → simulation multi-agents voice roleplay.
-Stack : Next.js 16 App Router · Mistral AI · ElevenLabs · Browser Web Speech API
+Stack : Next.js 16 App Router · Mistral AI (via AWS Bedrock) · ElevenLabs · Browser Web Speech API
 
 ---
 
-## 1. Architecture Globale — Le Flux de Données
+## 1. Vue d'ensemble
 
-### Phase 1 — Ingestion & Orchestration
+```
+Document PDF/TXT
+       │
+  /api/upload          → extraction texte brut
+       │
+  /api/orchestrate     → SSE : prepareGamePlan() — 3 appels Mistral → GamePlan
+       │
+  app/page.tsx         → machine d'état React (phases UI)
+       │
+       ├─ /api/chat    → SSE : Q&A state machine + streaming OpenAI SDK (Bedrock)
+       ├─ /api/tts     → ElevenLabs TTS par segment (prefetch parallèle)
+       └─ /api/report  → Rapport manager JSON post-simulation
+```
 
-**Endpoint : `POST /api/upload`**
-- pdf-parse (PDF) ou plain text (.txt)
-- Troncature à **12 000 caractères** (~3 000 tokens) avec notice explicite
-- Retourne : `{ text, filename, charCount, truncated }`
-
-**Endpoint : `POST /api/orchestrate`** (SSE)
-1. `topTerms(text, 8)` — tokenisation BM25 → top 8 termes comme `keyConcepts`
-2. `sectionSummaries(text, 4)` — paragraphes >60 chars, tronqués à 260 chars chacun
-3. `assessComplexity(keyConcepts, sectionSummaries)` → `"simple" | "standard" | "complex"`
-   - simple : ≤4 concepts **et** ≤2 sections → 1 agent, 1 acte
-   - standard : défaut → 2 agents, 2 actes
-   - complex : ≥8 concepts **ou** ≥6 sections → 3-5 agents, 3 actes
-4. `orchestrateSimulation()` : **mistral-large-latest**, JSON mode (`responseFormat: json_object`), temp=0.35, maxTokens=3000, timeout=45s
-5. Fallback déterministe : `fallbackSimulationSetup()` si LLM échoue (template hardcodé depuis top terms)
-
-SSE events : `status` → `scenario` → `new_agent` (×N, délai 220ms) → `evaluation_grid` → `ready`
-
-**RAG : `app/lib/rag.ts`** (BM25 from scratch, zéro dépendance)
-- Chunking : 750 chars, overlap 120 chars, break aux retours ligne
-- BM25 : k1=1.2, b=0.75, stop words français, normalisation Unicode + accent stripping
-- `buildAgentPrompt()` dans `agent-factory.ts` : query = `"${role} ${motivation} ${topics}"`, topK=5 chunks → injectés dans le system prompt de chaque agent
+**Phases UI :** `upload → ready → orchestrating → game → report`
 
 ---
 
-### Phase 2 — Game Loop
+## 2. Pipeline d'orchestration (`app/lib/agents/prepare.ts`)
 
-**STT : Browser Web Speech API**
-- `window.SpeechRecognition || window.webkitSpeechRecognition`
-- Lang `fr-FR`, `continuous: true`, `interimResults: true`
-- Push-to-talk : mousedown/touchstart démarre, mouseup/touchend soumet le transcript final
-- Aucun fallback si API non supportée (Chrome requis)
+Au démarrage, 3 appels Mistral séquentiels génèrent le `GamePlan` complet.
 
-**Endpoint : `POST /api/chat`** (SSE)
+### Step 1 — `generateQAPairs()`
 
-Corps de la requête : `{ playerMessage, gameState, kickoff, turnsWithCurrentAgent, strugglingTopics }`
+| Param | Valeur |
+|-------|--------|
+| Model | `mistral.mistral-large-3-675b-instruct` |
+| Input | `documentText.slice(0, 8000)` |
+| Output | `QAPair[]` — questions + réponses attendues + mots-clés + situation RPG |
+| maxTokens | 3000 |
+| timeout | 30s |
 
-Construction des messages (ordre) :
-1. System — `activeAgentState.systemPrompt` (personnalité + RAG knowledge)
-2. System — `buildContext()` (interdictions, acte courant, trigger_condition, bilan joueur, hints de switch/stuck)
-3. System — kickoff situationnel (initial ou agent-switch, avec key_challenge + trigger_condition + état joueur)
-4. Historique — `conversationHistory.slice(-20)` filtré et assaini
-5. User — message joueur (ou prompt kickoff standardisé)
+Chaque `QAPair` contient :
+- `question` : question directe
+- `expected_answer` : 2-4 points clés
+- `keywords` : mots discriminants qui doivent apparaître dans une bonne réponse
+- `situation` : mini-scénario RPG en 2 phrases que l'agent joue pour poser la question
+- `difficulty` : `easy | medium | hard`
 
-LLM : **mistral-large-latest**, temp=0.65, maxTokens=**120**, toolChoice="auto"
+### Step 2 — `categorizeQAPairs()`
 
-**5 outils Mistral :**
+| Param | Valeur |
+|-------|--------|
+| Model | `mistral.magistral-small-2509` ← petit modèle, tâche simple |
+| Input | liste des questions (IDs + texte) |
+| Output | `QACategory[]` — 1 à 4 catégories thématiques |
+| maxTokens | 1000 |
+| timeout | 15s |
 
-| Outil | Disponibilité | Effet |
-|---|---|---|
-| `switch_agent` | non-kickoff uniquement | Change `activeAgentId`, déclenche `autoKickoff` |
-| `trigger_event` | toujours | Ajoute à `triggeredEvents`, peut activer `chaosMode` |
-| `update_emotion` | toujours | Modifie `emotion` de l'agent actif → change voix ElevenLabs |
-| `check_knowledge` | toujours | Enregistre `testedTopics`, ajoute un `knowledgeCheck` |
-| `conclude_simulation` | toujours | `simulationComplete=true`, `conclusionType` (success/partial/failure) |
+Règles : 1 catégorie par thème, min 2 Q&A / catégorie, max 4 catégories, progression pédagogique.
 
-**`switch_agent` est enum-contraint** : seuls les IDs des agents non-actifs sont dans le schéma.
+### Step 3 — `generateAgentsAndScenario()`
 
-**Force switch déterministe** (fallback serveur) :
-```
-!isKickoff && !hasModelSwitch && (struggling.length > 0 || turnCount >= 2)
-```
-Sélection : agent avec `knowledge_topics` qui couvre les lacunes → `warm_female` → `candidates[0]`
+| Param | Valeur |
+|-------|--------|
+| Model | `mistral.mistral-large-3-675b-instruct` |
+| Input | résumé des catégories (nom + description + exemple de question) |
+| Output | `Agent[]` + `learningAgent` + `Scenario` |
+| maxTokens | 2500 |
+| timeout | 30s |
 
-**Hard cap par acte** : `MAX_TURNS_PER_ACT = 4` → `isActStuck` → hint 🔴 ACTE BLOQUÉ dans le contexte
+Produit :
+- **1 agent par catégorie** (personnalités opposées, voix distinctes)
+- **1 agent pédagogique** (`warm_female`) — s'active sur les échecs
+- **1 scénario** avec 1 acte par catégorie
 
-**Evaluateur parallèle** (`app/lib/agents/evaluator.ts`) :
-- Lance `evaluateExchange()` en parallèle du streaming (Promise non-bloquante)
-- **mistral-large-latest**, temp=0.2, maxTokens=600, tool calling forcé (`evaluation_update`)
-- Reçoit : message joueur, réponse agent, état du jeu (scores, acte, historique)
-- Retourne : `score_updates[]` (delta ±20 max par topic), `should_advance_act`, `should_trigger_chaos`
+**Fallback** : si un step échoue → `fallbackGamePlan()` avec données génériques (M. Durand, 5 Q&A basiques).
 
-SSE events :
-```
-meta (patch initial + tool_calls)
-→ token (mot par mot, délai 18ms)
-→ done (texte complet + patch)
-→ [eval résout] → meta (scores mis à jour, acte éventuel)
-```
-
----
-
-### Phase 3 — Audio en Temps Réel
-
-**Chunking** : `extractPlayableChunks(minChars=30, maxChars=140)`
-- Déclenché pendant le stream SSE (dès 30 chars accumulés)
-- Chunks courts → latence perçue faible, premier audio en <500ms
-
-**Endpoint : `POST /api/tts`** → proxy ElevenLabs
-- `sanitizeText()` : strip markdown wrappers (gras, italique, code), soften ponctuation (`:` → `,`, `.` → `,` mid-sentence) pour flow vocal naturel
-- Résolution voix : `voice_type` → `VOICE_MAP[voice_type]` (5 IDs ElevenLabs, env-overridables)
-- `calm_narrator` : voice ID fixe séparé (`ELEVENLABS_VOICE_NARRATOR_FIXED`)
-- Model : **`eleven_turbo_v2_5`** (env override `ELEVENLABS_MODEL_ID`)
-- Endpoint ElevenLabs : `/v1/text-to-speech/{voice_id}/stream`
-- Timeout : 20s (AbortController)
-- `voice_settings` : stability + similarity_boost (depuis `EMOTION_PARAMS`), style=0.3, use_speaker_boost=true
-- `response.body` pipé directement — **zéro buffering serveur**
-
-**5 archétypes de voix :**
-
-| VoiceType | Env var |
-|---|---|
-| `authoritative_male` | `ELEVENLABS_VOICE_AUTHORITATIVE_MALE` |
-| `warm_female` | `ELEVENLABS_VOICE_WARM_FEMALE` |
-| `stressed_young` | `ELEVENLABS_VOICE_STRESSED_YOUNG` |
-| `calm_narrator` | `ELEVENLABS_VOICE_CALM_NARRATOR` |
-| `gruff_veteran` | `ELEVENLABS_VOICE_GRUFF_VETERAN` |
-
-**Paramètres d'émotion** (`EMOTION_PARAMS`) :
-
-| Émotion | stability | similarity_boost |
-|---|---|---|
-| calm | 0.75 | 0.75 |
-| stressed | 0.30 | 0.50 |
-| angry | 0.40 | 0.80 |
-| panicked | 0.20 | 0.40 |
-| suspicious | 0.55 | 0.70 |
-
-**File TTS client** (`ttsPreloadRef`) :
-- Map `chunkId → Promise<string|null>` : prefetch du chunk N+1 pendant lecture du chunk N
-- `ttsGenerationRef` (compteur entier) : incrémenté à chaque nouveau tour → annule les générations stales au switch d'agent
-
----
-
-### Phase 4 — Résolution
-
-**Déclencheurs :**
-- LLM appelle `conclude_simulation` → `patch.simulationComplete=true`, `conclusionType`, `finalMessage`
-- OU évaluateur `should_advance_act` quand déjà au dernier acte → auto-complete `"success"`
-
-**Score final :**
+**Type produit** :
 ```typescript
-computeWeightedScore(scores): Σ(score × weight) / Σ(weight)  // arrondi entier
-```
-Poids issus de `evaluation_grid` défini par l'orchestrateur.
-
-**Nouveau endpoint : `POST /api/report`**
-- Génère le rapport manager final via `mistral-large-latest` en JSON mode (`responseFormat: json_object`)
-- Input : `gameState`, `assessments`, `documentFilename`, `documentContext`, `finalMessage`
-- Output : `SimulationReport` enrichi :
-  - `executiveSummary`
-  - `topCriticalGaps` (preuves + patterns d'échec)
-  - `recommendations` (priorisées)
-  - `actionablePlan7Days`
-  - `decisionTrace`
-- Fallback déterministe serveur si génération LLM KO (aucun blocage UI)
-
-**Composants :**
-- `SimulationEndOverlay` : ne fait plus de fausse progression temporelle ; CTA explicite "Voir le rapport manager"
-- `SkillsReportDashboard` : radar chart + synthèse executive + plan 7 jours + trace décisionnelle
-
----
-
-### Phase 5 — Positionnement B2B / UX
-
-- Nettoyage des labels legacy côté UI (plus de branding RATP dans le flow principal)
-- Metadata app orientée produit (`RAG to RPG — Serious Game Generator`)
-- Le bouton `Terminer la simulation` déclenche la génération d'un rapport exploitable manager, puis ouvre le dashboard
-
----
-
-## 2. Diagramme de Séquence — Un Tour Complet
-
-```mermaid
-sequenceDiagram
-    participant J as Joueur (Browser)
-    participant STT as Web Speech API
-    participant UI as page.tsx
-    participant CHAT as /api/chat
-    participant LLM as Mistral Large
-    participant EVAL as Evaluateur (parallel)
-    participant TTS as /api/tts
-    participant EL as ElevenLabs
-
-    J->>STT: mousedown → recognition.start()
-    J->>STT: mouseup → recognition.stop()
-    STT->>UI: transcript final (fr-FR)
-    UI->>CHAT: POST { playerMessage, gameState, turnsWithCurrentAgent, strugglingTopics }
-
-    CHAT->>LLM: [system: agent prompt + context] + [history -20] + [user msg]
-    Note over LLM: mistral-large-latest · temp=0.65 · maxTokens=120 · 5 tools
-
-    par Streaming LLM
-        LLM-->>CHAT: content tokens + tool_calls
-        CHAT-->>UI: SSE meta (patch initial)
-        loop mot par mot (18ms)
-            CHAT-->>UI: SSE token
-            UI->>UI: extractPlayableChunks(min=30)
-            UI->>TTS: POST { text: chunk, voice_type, emotion }
-            TTS->>EL: /v1/text-to-speech/{id}/stream (11_turbo_v2_5, 20s timeout)
-            EL-->>TTS: audio/mpeg stream
-            TTS-->>UI: response.body piped
-            UI->>J: Audio playback (prefetch N+1 en parallèle)
-        end
-        CHAT-->>UI: SSE done (texte complet)
-    and Évaluateur parallèle
-        CHAT->>EVAL: evaluateExchange(playerMsg, agentResponse, gameState)
-        EVAL->>LLM: mistral-large-latest · temp=0.2 · maxTokens=600 · tool=evaluation_update
-        LLM-->>EVAL: score_updates[], should_advance_act, should_trigger_chaos
-        EVAL-->>CHAT: EvaluationUpdate
-        CHAT-->>UI: SSE meta (scores + acte mis à jour)
-    end
-
-    alt patch.autoKickoff === true
-        UI->>UI: autoKickoffStateRef.set(nextState)
-        Note over UI: useEffect([isLoading]) détecte isLoading→false
-        UI->>CHAT: POST { kickoff: true, gameState: nextState }
-        Note over CHAT: isSwitchKickoff → message contextualisé (key_challenge + trigger_condition + perf joueur)
-    end
-
-    Note over UI: Fin de simulation (manuel ou conclude_simulation)
-    UI->>/api/report: POST { gameState, assessments, documentContext }
-    /api/report->>LLM: mistral-large-latest · json_object · timeout 20s
-    LLM-->>/api/report: report JSON manager-ready
-    /api/report-->>UI: { report } (ou fallback déterministe)
-    UI->>J: SkillsReportDashboard (PDF export via window.print)
-```
-
----
-
-## 3. Gestion du State — Le Cerveau
-
-### `MultiAgentGameState` (type central)
-
-```typescript
-{
-  agents: AgentState[];          // systemPrompt pré-buildé par agent-factory + RAG
-  activeAgentId: string;         // agent qui parle actuellement
-  conversationHistory: Message[]; // toute la conversation (slice(-20) envoyé au LLM)
-  scores: ScoreEntry[];          // { topic, score: 0-100, weight } par compétence
-  totalScore: number;            // computeWeightedScore(scores)
-  currentAct: number;            // acte actuel (1-based)
-  testedTopics: string[];        // topics déjà testés → évite répétition entre agents
-  triggeredEvents: string[];     // log des événements déclenchés
-  scenario: Scenario;            // acts[], title, setting, initial_situation
+GamePlan = {
+  categories: QACategory[];
+  qaPairs:    QAPair[];
+  agents:     Agent[];          // 1 par catégorie
+  learningAgent: Agent;         // warm_female
+  scenario:   Scenario;         // acts[]
 }
 ```
 
-### Synchronisation SSE → State
-
-Le serveur envoie des **patches partiels** (`patch: Record<string, unknown>`).
-Le client fusionne : `nextState = { ...currentState, ...patch }`.
-
-Deux events `meta` par tour :
-1. **Avant streaming** : switch d'agent, émotion, événements (décisions synchrones du LLM)
-2. **Après streaming** : scores mis à jour, avancement d'acte (résultat async de l'évaluateur)
-
-### Mécanisme Auto-Kickoff
+### SSE events `/api/orchestrate`
 
 ```
-switch_agent détecté → patch.autoKickoff=true
-→ client stocke nextState dans autoKickoffStateRef
-→ useEffect([isLoading]) : quand isLoading passe false
-  → sendMultiAgentAction("", { kickoff: true, stateOverride: kickoffState })
-  → POST /api/chat avec isSwitchKickoff=true
-  → message system contextualisé : key_challenge + trigger_condition + perf joueur
+status → status → ... → scenario → new_agent (×N, 80ms) → evaluation_grid → ready
 ```
-
-Protège contre les boucles : `patch.autoKickoff = !isKickoff` (jamais sur un tour kickoff).
-
-### Isolation des Contextes par Agent
-
-Chaque `AgentState` embarque son `systemPrompt` pré-calculé à l'initialisation :
-- Personnalité, motivation, relation joueur
-- **Chunks RAG dédiés** : query = rôle + motivation + topics de l'agent → top 5 chunks BM25
-- Scenario setting
-
-Les agents ne partagent pas de contexte commun — la cohérence est maintenue par le `buildContext()` injecté à chaque tour (acte courant, scores, événements, topics testés).
 
 ---
 
-## Modèles & Variables d'Environnement
+## 3. Machine d'état Q&A (`/api/chat/route.ts`)
 
-| Variable | Usage | Défaut |
-|---|---|---|
-| `MISTRAL_API_KEY` | Tous les appels Mistral | — |
-| `MISTRAL_ORCHESTRATION_MODEL` | Génération du scénario | `mistral-large-latest` |
-| `MISTRAL_EVALUATION_MODEL` | Évaluateur silencieux | `mistral-large-latest` |
-| `ELEVENLABS_API_KEY` | TTS | — |
-| `ELEVENLABS_MODEL_ID` | Modèle ElevenLabs | `eleven_turbo_v2_5` |
-| `ELEVENLABS_VOICE_*` | 5 voice IDs + narrator fixe | hardcodés (fallback) |
+Chaque réponse du joueur passe par cette machine d'état côté serveur :
+
+```
+ASKING ──── correct ──────────────────────────────► Q suivante (ou catégorie suivante)
+   │
+   └── incorrect (1ère fois) → REPHRASING
+              │
+         correct ──────────────────────────────────► Q suivante
+              │
+         incorrect (2ème fois) → LEARNING (agent pédagogique)
+                    │
+               "compris" → RE_ASKING
+                    │
+               correct ──────────────────────────────► Q suivante
+```
+
+**`InteractionState` — la position dans la machine :**
+```typescript
+{
+  phase:               "ASKING" | "REPHRASING" | "LEARNING" | "RE_ASKING" | "COMPLETE"
+  currentCategoryIndex: number;
+  currentQAIndex:       number;
+  failCount:            0 | 1 | 2;
+  completedQAs:         string[];    // IDs des Q&A réussis
+  failedQAs:            string[];    // IDs des Q&A échoués
+  currentQAPairId:      string;
+}
+```
+
+**Évaluation** : appel `mistralChat()` en JSON mode (pas de streaming) — compare la réponse joueur aux `keywords` et `expected_answer`. Retourne `{ correct: boolean, feedback: string }`.
+
+**Scoring par tentative :**
+
+| Phase | Points |
+|-------|--------|
+| ASKING (1ère tentative) | +15 |
+| RE_ASKING (après REPHRASING) | +8 |
+| RE_ASKING (après LEARNING) | +3 |
+| Échec → REPHRASING | −20% du score max |
+| Échec → LEARNING | −30% du score max |
+
+**Avancement automatique :**
+- Toutes les Q&A d'une catégorie terminées → switch vers l'agent de la catégorie suivante
+- Toutes les catégories terminées → `COMPLETE` → rapport
+
+### Tools (function calling) dans `/api/chat`
+
+| Tool | Déclenchement | Effet |
+|------|---------------|-------|
+| `update_emotion` | Après chaque réponse joueur | Change `emotion` → voix TTS + couleur fond |
+| `trigger_event` | Contextuel | Ajoute à `triggeredEvents` (narratif) |
+
+> Note : `switch_agent` n'est **plus** un tool. L'avancement entre agents est **déterministe** — piloté par la machine d'état Q&A, pas par le LLM.
+
+---
+
+## 4. Système d'agents
+
+### Voix (`app/lib/voice/voices.ts`)
+
+| `voice_type` | Caractère | Env var |
+|-------------|-----------|---------|
+| `authoritative_male` | Directeur pressé | `ELEVENLABS_VOICE_AUTHORITATIVE_MALE` |
+| `warm_female` | Bienveillante (formatrice) | `ELEVENLABS_VOICE_WARM_FEMALE` |
+| `stressed_young` | Junior stressé | `ELEVENLABS_VOICE_STRESSED_YOUNG` |
+| `calm_narrator` | Narrateur (`*astérisques*`) | `ELEVENLABS_VOICE_CALM_NARRATOR` |
+| `gruff_veteran` | Vétéran bourru | `ELEVENLABS_VOICE_GRUFF_VETERAN` |
+
+### Émotions dynamiques (`EMOTION_PARAMS`)
+
+| Émotion | stability | speed | style |
+|---------|-----------|-------|-------|
+| `calm` | 0.75 | 1.0 | 0.1 |
+| `stressed` | 0.30 | 1.2 | 0.65 |
+| `angry` | 0.40 | 1.1 | 0.80 |
+| `panicked` | 0.20 | 1.4 | 0.95 |
+| `suspicious` | 0.55 | 0.95 | 0.40 |
+
+L'émotion est déclenchée par `update_emotion` et affecte :
+- Les paramètres ElevenLabs (stability, similarity_boost, speed, style)
+- La couleur de fond de l'interface (transition CSS 0.8s)
+- La couleur du badge émotion dans `ActiveAgentDisplay`
+
+### Agent pédagogique (`learningAgent`)
+
+- `voice_type: warm_female`, toujours le même quelque soit le document
+- S'active sur le **2ème échec consécutif** d'une Q&A
+- Explique la bonne réponse, puis dit "Je vous repasse [nom agent catégorie]"
+- Après confirmation du joueur → `RE_ASKING` de la même question
+
+### Transition entre agents (switch déterministe)
+
+1. Toutes les Q&A de la catégorie courante terminées → l'agent sortant dit "Je vous passe [nom suivant]"
+2. `autoKickoffStateRef` stocke le prochain état
+3. Pendant le TTS de la phrase d'adieu, `prefetchedResponseRef` lance déjà le `fetch("/api/chat")` suivant
+4. Quand TTS finit → `doKickoff()` → `displayActiveAgentId` mis à jour immédiatement → streaming du nouvel agent commence (réponse déjà là)
+
+### Mémoire partagée inter-agents (`SharedMemoryNote`)
+
+L'orchestrateur peut injecter des notes d'un agent à un autre (ex : "joueur faible sur sujet X") — utilisées dans les system prompts des agents entrants.
+
+---
+
+## 5. Pipeline TTS (`/api/tts/route.ts`)
+
+### Segmentation
+
+- Texte avec `*astérisques*` → voix `calm_narrator` (didascalies narrateur)
+- Reste → voix de l'agent actif + paramètres d'émotion
+
+### Prefetch parallèle
+
+`enqueueTtsSegment()` appelle immédiatement `getOrCreateTtsPromise(chunk)` → le chunk N+1 est fetchné pendant la lecture du chunk N. Résultat : zéro pause entre segments.
+
+### File TTS
+
+`ttsQueueRef` traité séquentiellement par `processTtsQueue()`. Le `ttsGenerationRef` (entier incrémenté) invalide les promesses stales si un nouveau tour commence.
+
+### ElevenLabs
+
+- Model : `eleven_multilingual_v2`
+- Endpoint : `/v1/text-to-speech/{voice_id}` (réponse complète, pas streaming)
+- Timeout : 15s
+
+---
+
+## 6. RAG (`app/lib/rag.ts`)
+
+BM25 maison (zéro dépendance externe) :
+- Chunking : overlapping chunks sur le document source
+- `buildRagIndex(text)` → `termFreq` + `docFreq` par chunk
+- `retrieveRelevantChunks(index, query, k)` → top-k chunks par score BM25
+- Stop words français, normalisation Unicode + accent stripping
+
+Utilisé dans les system prompts des agents : chaque agent reçoit les chunks les plus pertinents selon son rôle + ses `knowledge_topics`.
+
+---
+
+## 7. Rapport manager (`/api/report/route.ts`)
+
+Déclenché manuellement à la fin de la simulation.
+
+**Input :** `gameState`, `assessments[]`, `documentFilename`, `documentContext`
+
+**LLM :** `mistral.mistral-large-3-675b-instruct`, JSON mode, `maxTokens: 1200`, `timeout: 20s`
+
+**Output `SimulationReport` :**
+```typescript
+{
+  globalWeightedScore:   number;          // score pondéré final
+  executiveSummary:      string;          // 1-2 phrases
+  topCriticalGaps:       CriticalGap[];   // 2-3 lacunes critiques
+  recommendations:       SkillRecommendation[]; // actions priorisées
+  actionablePlan7Days:   string[];        // 3 actions concrètes
+  failurePatternAnalysis: FailurePattern[]; // 1-2 patterns récurrents
+  employeeVibe:          EmployeeVibe;    // ton, résistance au stress, synthèse
+}
+```
+
+**Fallback déterministe** (`buildFallbackReport()`) si le LLM échoue — aucun blocage UI.
+
+**UI** : `SkillsReportDashboard` — `position: fixed; inset: 0` pour scroll indépendant du body (`overflow: hidden`).
+
+---
+
+## 8. State central (`MultiAgentGameState`)
+
+```typescript
+{
+  scenario:           Scenario;
+  currentAct:         number;
+  agents:             AgentState[];         // systemPrompt pré-buildé + émotion
+  activeAgentId:      string;
+  conversationHistory: Message[];
+  scores:             Array<{ topic, score, weight }>;
+  totalScore:         number;               // computeWeightedScore(scores)
+  triggeredEvents:    string[];
+  gamePlan:           GamePlan;             // Q&A + catégories + agents
+  interactionState:   InteractionState;     // position machine d'état Q&A
+  sharedMemory:       SharedMemoryNote[];   // notes inter-agents
+}
+```
+
+Patches partiels envoyés via SSE → client merge : `nextState = { ...currentState, ...patch }`.
+
+---
+
+## 9. API Routes
+
+| Route | Méthode | Description |
+|-------|---------|-------------|
+| `/api/upload` | POST | Extraction texte PDF/TXT (multipart) |
+| `/api/orchestrate` | POST | SSE — `prepareGamePlan()` (3 appels Mistral via Bedrock) |
+| `/api/chat` | POST | SSE — Q&A state machine + streaming OpenAI SDK (Bedrock) |
+| `/api/tts` | POST | ElevenLabs TTS → audio (base64 ou stream) |
+| `/api/report` | POST | Rapport manager JSON |
+
+---
+
+## 10. Composants UI
+
+| Composant | Rôle |
+|-----------|------|
+| `AgentGenerationView` | Vue SSE orchestration — agents apparaissent au fil du SSE |
+| `ActiveAgentDisplay` | Nom + rôle + badge émotion de l'agent actif |
+| `DialogueBox` | Texte streamé + curseur animé |
+| `ObjectiveHUD` | Acte en cours + barre de score pondéré colorée |
+| `KnowledgeHeatmap` | Grille par catégorie — score coloré temps réel |
+| `MissionFeed` | Terminal orchestration live (bas panneau droit) |
+| `SidePanel` | Panneau droit — KnowledgeHeatmap + MissionFeed |
+| `SkillsReportDashboard` | Rapport manager (position:fixed, scroll indépendant) |
+| `PushToTalk` | STT Web Speech API `fr-FR` |
+| `ActTransitionOverlay` | Animation transition entre actes |
+| `SimulationEndOverlay` | Écran fin de simulation + CTA rapport |
+
+---
+
+## 11. Variables d'environnement
+
+```env
+# AWS Bedrock (via endpoint OpenAI-compatible)
+OPENAI_API_KEY=bedrock-api-key-...        # token pré-signé AWS (validité 12h)
+OPENAI_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/v1
+AWS_BEARER_TOKEN_BEDROCK=...              # bearer token brut (référence)
+
+# ElevenLabs
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_AUTHORITATIVE_MALE=BUJMBsQ3Oq4cEeWSb48y
+ELEVENLABS_VOICE_WARM_FEMALE=imRmmzTqlLHt9Do1HufF
+ELEVENLABS_VOICE_STRESSED_YOUNG=Xgb3SR8idOHy8scGICeJ
+ELEVENLABS_VOICE_CALM_NARRATOR=BVBq6HVJVdnwOMJOqvy9
+ELEVENLABS_VOICE_GRUFF_VETERAN=F9KUTOne5xOKqAbIU7yg
+```
+
+> ⚠️ Le token `OPENAI_API_KEY` expire après **12 heures**. Le régénérer depuis la console hackathon si l'API retourne 401.
+
+---
+
+## 12. Client LLM (`app/lib/agents/mistral-client.ts`)
+
+Toutes les routes LLM passent par `mistralChat()` et `bedrockClient` (instance partagée `OpenAI`).
+
+### Mapping modèles
+
+| Nom logique | Modèle Bedrock |
+|-------------|---------------|
+| `mistral-large-latest` (défaut) | `mistral.mistral-large-3-675b-instruct` |
+| `mistral-small-latest` | `mistral.magistral-small-2509` |
+
+### Interface `mistralChat()`
+
+```typescript
+mistralChat({
+  model?:         string;             // "mistral-large-latest" par défaut
+  messages:       ChatMessage[];
+  tools?:         ToolDefinition[];
+  toolChoice?:    "any"|"auto"|"none"|{...};  // "any" → "required" (OpenAI compat)
+  temperature?:   number;             // défaut 0.4
+  maxTokens?:     number;             // défaut 800
+  timeoutMs?:     number;             // défaut 15000
+  responseFormat?: { type: "json_object" };
+})
+```
+
+Le streaming dans `/api/chat` utilise `bedrockClient.chat.completions.create({ stream: true })` directement.
+
+---
+
+## 13. Structure des fichiers
+
+```
+app/
+├── page.tsx                          # Composant racine — toute la logique client
+├── globals.css                       # body overflow:hidden + fonts + animations
+├── api/
+│   ├── upload/route.ts               # Extraction texte
+│   ├── orchestrate/route.ts          # SSE GamePlan
+│   ├── chat/route.ts                 # SSE Q&A state machine + function calling
+│   ├── tts/route.ts                  # ElevenLabs TTS
+│   └── report/route.ts               # Rapport manager
+├── lib/
+│   ├── types.ts                      # Tous les types TypeScript
+│   ├── rag.ts                        # BM25 index + retrieval
+│   ├── sfx.ts                        # Effets sonores
+│   ├── agents/
+│   │   ├── mistral-client.ts         # Client OpenAI→Bedrock + helper mistralChat()
+│   │   ├── prepare.ts                # Pipeline orchestration 3 steps
+│   │   ├── orchestrator.ts           # (legacy, non utilisé en v2)
+│   │   ├── evaluator.ts              # (legacy, non utilisé en v2)
+│   │   └── agent-factory.ts          # (legacy, non utilisé en v2)
+│   └── voice/
+│       └── voices.ts                 # VOICE_MAP + EMOTION_PARAMS
+└── components/
+    ├── AgentGenerationView.tsx
+    ├── ActiveAgentDisplay.tsx
+    ├── DialogueBox.tsx
+    ├── ObjectiveHUD.tsx
+    ├── KnowledgeHeatmap.tsx
+    ├── MissionFeed.tsx
+    ├── SidePanel.tsx
+    ├── SkillsReportDashboard.tsx
+    ├── PushToTalk.tsx
+    ├── TextInput.tsx
+    ├── FileUpload.tsx
+    ├── ActTransitionOverlay.tsx
+    ├── SimulationEndOverlay.tsx
+    └── ...
+```
+
+---
+
+## 14. Démarrage local
+
+```bash
+npm install
+cp .env.example .env.local   # remplir OPENAI_API_KEY + OPENAI_BASE_URL + ELEVENLABS_API_KEY
+npm run dev
+# → http://localhost:3000
+```
+
+Uploader un PDF ou TXT → lancer l'orchestration → jouer la simulation → consulter le rapport manager.

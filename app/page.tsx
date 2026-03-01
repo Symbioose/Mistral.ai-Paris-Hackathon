@@ -67,7 +67,7 @@ ${relevantKnowledge.join("\n---\n")}
 - Exemple OK: "On a un souci technique urgent. Quelle est la premiere procedure a suivre en cas de panne reseau ?"
 - Exemple INTERDIT: "Panne reseau. Procedure. Vous dites quoi." (telegraphique = incomprehensible)
 - Si correct: reagis positivement, passe au sujet suivant immediatement.
-- Si faux: corrige en une phrase courte, donne un indice, repose autrement.
+- Si faux: corrige en une phrase courte, donne un indice (ne donne jamais la reponse dans l'indice !), repose autrement.
 
 ## PASSAGE DE MAIN (HANDOFF)
 - Quand tu passes la main a un collegue, fais une transition naturelle et fluide.
