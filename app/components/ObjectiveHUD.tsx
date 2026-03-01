@@ -30,7 +30,6 @@ export default function ObjectiveHUD({
   currentAct,
   totalActs,
   totalScore,
-  scoreDelta,
 }: ObjectiveHUDProps) {
   const color = scoreColor(totalScore);
 
@@ -131,20 +130,6 @@ export default function ObjectiveHUD({
           >
             {scoreLabel(totalScore)}
           </span>
-          {scoreDelta !== null && (
-            <span
-              key={`delta_${currentAct}_${scoreDelta}`}
-              style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 9,
-                fontWeight: 700,
-                color: scoreDelta >= 0 ? "#7AB648" : "#CC2A2A",
-                animation: "score-delta-pop 2.4s ease-out forwards",
-              }}
-            >
-              {scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta}
-            </span>
-          )}
         </div>
       </div>
 

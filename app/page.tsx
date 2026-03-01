@@ -209,6 +209,8 @@ export default function Home() {
   const autoKickoffStateRef = useRef<MultiAgentGameState | null>(null);
   // Called by processTtsQueue when queue empties — fires the deferred auto-kickoff.
   const autoKickoffCallbackRef = useRef<(() => void) | null>(null);
+  // Stores prefetched API response promise so the fetch starts while TTS still plays.
+  const prefetchedResponseRef = useRef<Promise<Response> | null>(null);
 
   // ── Mission Feed (orchestration log) ──
   const [missionFeedItems, setMissionFeedItems] = useState<MissionFeedItem[]>([]);
@@ -223,7 +225,6 @@ export default function Home() {
     conclusionType: string;
     finalMessage: string;
   } | null>(null);
-  const [scoreDelta, setScoreDelta] = useState<number | null>(null);
   const prevTotalScoreRef = useRef<number>(50);
 
   useEffect(() => {
@@ -238,12 +239,27 @@ export default function Home() {
     if (!autoKickoffStateRef.current || isLoading) return;
     const kickoffState = autoKickoffStateRef.current;
     autoKickoffStateRef.current = null;
+
+    // Start API call immediately — don't wait for TTS to finish.
+    // This eliminates the 1-3s Mistral latency gap between agents.
+    const stateToSend = { ...kickoffState };
+    prefetchedResponseRef.current = fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerMessage: "", gameState: stateToSend, kickoff: true }),
+    });
+
     const doKickoff = () => {
       autoKickoffCallbackRef.current = null;
       // Immediately switch name + clear old dialogue → user sees the switch happened.
       setDisplayActiveAgentId(kickoffState.activeAgentId);
       setGameState((prev) => ({ ...prev, dialogue: "" }));
-      void sendMultiAgentAction("", { kickoff: true, stateOverride: kickoffState });
+      void sendMultiAgentAction("", {
+        kickoff: true,
+        stateOverride: kickoffState,
+        prefetchedResponse: prefetchedResponseRef.current,
+      });
+      prefetchedResponseRef.current = null;
     };
     // If TTS is still running, let it finish first
     if (isTtsPlayingRef.current || ttsQueueRef.current.length > 0) {
@@ -421,7 +437,7 @@ export default function Home() {
   // ====== MULTI-AGENT CHAT ======
   const sendMultiAgentAction = useCallback(async (
     playerText: string,
-    options?: { kickoff?: boolean; stateOverride?: MultiAgentGameState },
+    options?: { kickoff?: boolean; stateOverride?: MultiAgentGameState; prefetchedResponse?: Promise<Response> | null },
   ) => {
     const isKickoff = Boolean(options?.kickoff);
     const baseState = options?.stateOverride || multiAgentState;
@@ -455,15 +471,17 @@ export default function Home() {
         conversationHistory: updatedHistory,
       };
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerMessage: playerText,
-          gameState: stateToSend,
-          kickoff: isKickoff,
-        }),
-      });
+      const res = options?.prefetchedResponse
+        ? await options.prefetchedResponse
+        : await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              playerMessage: playerText,
+              gameState: stateToSend,
+              kickoff: isKickoff,
+            }),
+          });
 
       if (!res.ok || !res.body) {
         throw new Error("Erreur API chat");
@@ -658,19 +676,6 @@ export default function Home() {
         }
       }
 
-      // Score change
-      if (activePatch.totalScore !== undefined) {
-        const delta = nextTotalScore - prevTotalScoreRef.current;
-        if (delta !== 0) {
-          newFeedItems.push({
-            id: `feed_score_${Date.now()}`,
-            type: "score_change",
-            timestamp: Date.now(),
-            scoreDelta: delta,
-            newScore: nextTotalScore,
-          });
-        }
-      }
 
       if (newFeedItems.length > 0) {
         setMissionFeedItems((prev) => [...prev, ...newFeedItems]);
@@ -685,13 +690,7 @@ export default function Home() {
         }
       }
 
-      // ── Mission Control: score delta indicator ──
       if (activePatch.totalScore !== undefined) {
-        const delta = nextTotalScore - prevTotalScoreRef.current;
-        if (delta !== 0) {
-          setScoreDelta(delta);
-          setTimeout(() => setScoreDelta(null), 2600);
-        }
         prevTotalScoreRef.current = nextTotalScore;
       }
 
@@ -1032,7 +1031,6 @@ export default function Home() {
     setMissionFeedItems([]);
     setActTransition(null);
     setSimulationEnd(null);
-    setScoreDelta(null);
     prevTotalScoreRef.current = 50;
   }, []);
 
@@ -1247,10 +1245,6 @@ export default function Home() {
           <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.7)" }} />
         </div>
 
-        {/* Orchestration Log Feed */}
-        {isMultiAgent && gameState.isGameStarted && (
-          <MissionFeed items={missionFeedItems} isActive={isLoading} />
-        )}
 
         {/* ── TOP BAR ── */}
         <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: isMultiAgent ? "2px solid rgba(74,144,217,0.15)" : "2px solid rgba(255,91,34,0.15)" }}>
@@ -1386,13 +1380,12 @@ export default function Home() {
             currentAct={multiAgentState.currentAct}
             totalActs={multiAgentState.scenario.acts.length}
             totalScore={multiAgentState.totalScore}
-            scoreDelta={scoreDelta}
           />
         )}
 
         {/* ── ACTIVE AGENT DISPLAY (multi-agent only) ── */}
         {isMultiAgent && activeAgentState && gameState.isGameStarted && (
-          <div style={{ position: "relative", zIndex: 20 }} className="animate-fade-in" key={activeAgentState.agent.id}>
+          <div style={{ position: "relative", zIndex: 20 }}>
             <ActiveAgentDisplay agentState={activeAgentState} />
           </div>
         )}
@@ -1697,6 +1690,10 @@ export default function Home() {
               scores={multiAgentState.scores}
               totalScore={multiAgentState.totalScore}
             />
+            {/* Orchestration Log — bottom of right panel */}
+            <div style={{ position: "relative", height: 240, borderTop: "1px solid rgba(74,144,217,0.1)", flexShrink: 0 }}>
+              <MissionFeed items={missionFeedItems} isActive={isLoading} />
+            </div>
           </>
         ) : (
           <SidePanel
