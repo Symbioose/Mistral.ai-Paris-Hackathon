@@ -1,0 +1,19 @@
+DOCUMENT DE FORMATION : PROTOCOLE "ZENITH" - CRISE CYBERSÉCURITÉ IA
+
+  1. Détection et Isolation (Priorité Alpha)
+  En cas de détection d'une exfiltration de poids de modèles (weights) ou de données d'entraînement :
+   - L'ingénieur de garde doit immédiatement isoler les nœuds affectés.
+   - Règle d'or : Ne jamais couper le serveur principal avant d'avoir copié les logs d'accès.
+   - Action requise : Utiliser la commande isolation "tiret tiret (--) isolation (--isolation) pour ne pas alerter l'intrus.
+
+
+  2. Obligations Légales (RGPD & Compliance)
+   - Toute fuite de données personnelles doit être signalée à la CNIL sous 72 heures maximum.
+   - L'agent DPO (Data Protection Officer) est le seul habilité à valider la communication externe.
+   - Il est interdit de nier la fuite si des preuves circulent sur Twitter/X.
+
+
+  3. Communication de Crise
+   - Priorité 1 : Informer les investisseurs.
+   - Priorité 2 : Communiquer auprès des utilisateurs via un canal sécurisé.
+   - Le ton doit être transparent, technique mais rassurant.
