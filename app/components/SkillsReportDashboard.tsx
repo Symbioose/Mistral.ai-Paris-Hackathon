@@ -7,10 +7,10 @@ import { ManagerAssessment, MultiAgentGameState, SimulationReport } from "@/app/
 // ============================================
 
 function RadarChart({ scores }: { scores: Array<{ topic: string; score: number; weight: number }> }) {
-  const size = 300;
+  const size = 360;
   const cx = size / 2;
   const cy = size / 2;
-  const maxR = cx - 50;
+  const maxR = cx - 55;
   const n = scores.length;
   if (n < 3) return null;
 
@@ -29,41 +29,42 @@ function RadarChart({ scores }: { scores: Array<{ topic: string; score: number; 
     .map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
     .join(" ") + "Z";
 
-  const scoreColor = (score: number) => {
-    if (score < 30) return "#CC2A2A";
-    if (score < 50) return "#D9754A";
-    if (score < 70) return "#D9A84A";
-    if (score < 85) return "#7AB648";
-    return "#2D9A48";
-  };
-
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
       {/* Grid rings */}
       {[0.25, 0.5, 0.75, 1].map((pct) => (
-        <path key={pct} d={poly(pct * maxR)} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={pct === 1 ? 1 : 0.5} />
+        <path key={pct} d={poly(pct * maxR)} fill="none" stroke="var(--corp-border)" strokeOpacity={0.4} strokeWidth={pct === 1 ? 1 : 0.5} />
       ))}
       {/* Axes */}
       {scores.map((_, i) => {
         const p = pointAt(i, maxR);
-        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />;
+        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="var(--corp-border)" strokeOpacity={0.3} strokeWidth={0.5} />;
       })}
       {/* Score polygon */}
-      <path d={scorePoly} fill="rgba(74,144,217,0.18)" stroke="#4A90D9" strokeWidth={1.5} />
+      <path d={scorePoly} fill="rgba(37,99,235,0.12)" stroke="var(--corp-blue)" strokeWidth={1.5} />
       {/* Score dots */}
       {scores.map((s, i) => {
         const p = pointAt(i, (s.score / 100) * maxR);
-        return <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={scoreColor(s.score)} stroke="#000" strokeWidth={0.5} />;
+        return (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={5} fill={scoreColor(s.score)} stroke="#fff" strokeWidth={2} filter="url(#dot-shadow)" />
+          </g>
+        );
       })}
       {/* Labels */}
       {scores.map((s, i) => {
-        const p = pointAt(i, maxR + 24);
+        const p = pointAt(i, maxR + 28);
         return (
-          <text key={i} x={p.x} y={p.y} fill="#C4C0B5" fontSize={8} fontFamily="'Space Mono', monospace" textAnchor="middle" dominantBaseline="middle">
+          <text key={i} x={p.x} y={p.y} fill="var(--corp-text-secondary)" fontSize={10} fontFamily="'DM Sans', sans-serif" textAnchor="middle" dominantBaseline="middle">
             {s.topic.length > 18 ? s.topic.slice(0, 17) + "\u2026" : s.topic}
           </text>
         );
       })}
+      <defs>
+        <filter id="dot-shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.15" />
+        </filter>
+      </defs>
     </svg>
   );
 }
@@ -73,18 +74,18 @@ function RadarChart({ scores }: { scores: Array<{ topic: string; score: number; 
 // ============================================
 
 function scoreColor(score: number): string {
-  if (score < 30) return "#CC2A2A";
-  if (score < 50) return "#D9754A";
-  if (score < 70) return "#D9A84A";
-  if (score < 85) return "#7AB648";
-  return "#2D9A48";
+  if (score < 30) return "#DC2626";
+  if (score < 50) return "#EA580C";
+  if (score < 70) return "#D97706";
+  if (score < 85) return "#059669";
+  return "#16A34A";
 }
 
 function scoreLabel(score: number): string {
   if (score < 30) return "Critique";
-  if (score < 50) return "Insuffisant";
-  if (score < 70) return "Moyen";
-  if (score < 85) return "Bien";
+  if (score < 50) return "À revoir";
+  if (score < 70) return "En progres";
+  if (score < 85) return "Acquis";
   return "Excellent";
 }
 
@@ -100,6 +101,26 @@ function generateInsights(scores: Array<{ topic: string; score: number; weight: 
 
   return { weakest, strongest, critical };
 }
+
+// ============================================
+// Reusable card style
+// ============================================
+
+const card = (extra?: React.CSSProperties): React.CSSProperties => ({
+  background: "#fff",
+  borderRadius: "var(--corp-radius-lg)",
+  boxShadow: "var(--corp-shadow-md)",
+  padding: 24,
+  ...extra,
+});
+
+const cardSm = (extra?: React.CSSProperties): React.CSSProperties => ({
+  background: "#fff",
+  borderRadius: "var(--corp-radius-lg)",
+  boxShadow: "var(--corp-shadow-sm)",
+  padding: 20,
+  ...extra,
+});
 
 // ============================================
 // Component
@@ -120,7 +141,6 @@ export default function SkillsReportDashboard({
   onRestart,
   multiAgentState,
 }: SkillsReportDashboardProps) {
-  // Multi-agent mode: use live game scores
   const useMultiAgent = !!multiAgentState && multiAgentState.scores.length > 0;
   const scores = useMultiAgent ? multiAgentState.scores : [];
   const totalScore = useMultiAgent
@@ -131,7 +151,6 @@ export default function SkillsReportDashboard({
 
   const { weakest, strongest, critical } = generateInsights(scores);
 
-  // Legacy mode data
   const topGaps = report?.topCriticalGaps ?? [];
   const recommendations = report?.recommendations ?? [];
   const trackedSkills = report?.skills ?? [];
@@ -146,7 +165,6 @@ export default function SkillsReportDashboard({
   const totalActs = useMultiAgent ? multiAgentState.scenario.acts.length : 0;
   const executiveSummary = report?.executiveSummary || "";
   const actionPlan7Days = report?.actionablePlan7Days || [];
-  const decisionTrace = report?.decisionTrace || [];
   const failurePatterns = report?.failurePatternAnalysis || [];
   const employeeVibe = report?.employeeVibe;
 
@@ -155,24 +173,45 @@ export default function SkillsReportDashboard({
       style={{
         position: "fixed",
         inset: 0,
-        background: "linear-gradient(135deg, #0a0a0f 0%, #0f0f1a 40%, #0a0a0f 100%)",
-        color: "#F3F0E6",
-        padding: "28px 20px",
+        background: "var(--corp-bg-subtle)",
+        color: "var(--corp-text)",
+        fontFamily: "var(--corp-font-body)",
+        padding: "40px 24px",
         overflowY: "auto",
       }}
     >
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
 
         {/* ── HEADER ── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 32 }}>
           <div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 8 }}>
-              Rapport d&apos;evaluation · Manager-Ready
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--corp-blue)",
+              marginBottom: 10,
+            }}>
+              Rapport d&apos;evaluation
             </p>
-            <h1 style={{ fontFamily: "'VT323', monospace", fontSize: 54, color: "#F3F0E6", lineHeight: 0.92, margin: 0 }}>
-              SKILL GAP REPORT
+            <h1 style={{
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 40,
+              color: "var(--corp-navy)",
+              lineHeight: 1.1,
+              margin: 0,
+              fontWeight: 400,
+            }}>
+              Rapport de competences
             </h1>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82", marginTop: 10 }}>
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 14,
+              color: "var(--corp-text-secondary)",
+              marginTop: 10,
+            }}>
               {scenarioTitle || documentFilename || "Simulation de formation"}
               {useMultiAgent && ` · Acte ${actsCompleted}/${totalActs}`}
               {` · ${scores.length || trackedSkills.length || assessments.length} competences`}
@@ -182,10 +221,16 @@ export default function SkillsReportDashboard({
             <button
               onClick={() => window.print()}
               style={{
-                fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700,
-                letterSpacing: "0.12em", textTransform: "uppercase", padding: "10px 16px",
-                background: "#4A90D9", color: "#F3F0E6", border: "2px solid #4A90D9",
-                boxShadow: "3px 3px 0 #2A5A8A", cursor: "pointer",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "10px 20px",
+                background: "var(--corp-blue)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "var(--corp-radius-md)",
+                boxShadow: "var(--corp-shadow-md)",
+                cursor: "pointer",
               }}
             >
               Exporter PDF
@@ -193,9 +238,14 @@ export default function SkillsReportDashboard({
             <button
               onClick={onRestart}
               style={{
-                fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700,
-                letterSpacing: "0.12em", textTransform: "uppercase", padding: "10px 16px",
-                background: "transparent", color: "#F3F0E6", border: "2px solid rgba(255,255,255,0.25)",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "10px 20px",
+                background: "transparent",
+                color: "var(--corp-navy)",
+                border: "1px solid var(--corp-border)",
+                borderRadius: "var(--corp-radius-md)",
                 cursor: "pointer",
               }}
             >
@@ -205,46 +255,123 @@ export default function SkillsReportDashboard({
         </div>
 
         {/* ── KPI CARDS ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 18 }}>
-          <div style={{ border: "2px solid " + scoreColor(totalScore), background: `${scoreColor(totalScore)}10`, padding: 14 }}>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
+          <div style={{
+            ...card(),
+            borderTop: `3px solid ${scoreColor(totalScore)}`,
+          }}>
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--corp-text-muted)",
+              marginBottom: 8,
+            }}>
               Score global
             </p>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: 52, color: scoreColor(totalScore), lineHeight: 1 }}>
+              <span style={{
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 48,
+                fontWeight: 700,
+                color: scoreColor(totalScore),
+                lineHeight: 1,
+              }}>
                 {totalScore}
               </span>
-              <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>/100</span>
+              <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text-muted)" }}>/100</span>
             </div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, fontWeight: 700, color: scoreColor(totalScore), marginTop: 4, letterSpacing: "0.1em" }}>
-              {scoreLabel(totalScore).toUpperCase()}
-            </p>
+            <div style={{
+              display: "inline-flex",
+              marginTop: 8,
+              padding: "4px 12px",
+              borderRadius: 100,
+              background: `${scoreColor(totalScore)}15`,
+              fontSize: 12,
+              fontWeight: 600,
+              color: scoreColor(totalScore),
+            }}>
+              {scoreLabel(totalScore)}
+            </div>
           </div>
 
-          <div style={{ border: "2px solid rgba(204,42,42,0.4)", background: "rgba(204,42,42,0.06)", padding: 14 }}>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+          <div style={{
+            ...card(),
+            borderTop: "3px solid #DC2626",
+          }}>
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--corp-text-muted)",
+              marginBottom: 8,
+            }}>
               Lacunes critiques
             </p>
-            <span style={{ fontFamily: "'VT323', monospace", fontSize: 42, color: critical.length > 0 ? "#CC2A2A" : "#5A5A5A", lineHeight: 1 }}>
+            <span style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 48,
+              fontWeight: 700,
+              color: (useMultiAgent ? critical.length : topGaps.length) > 0 ? "#DC2626" : "var(--corp-text-muted)",
+              lineHeight: 1,
+            }}>
               {useMultiAgent ? critical.length : topGaps.length}
             </span>
           </div>
 
-          <div style={{ border: "2px solid rgba(45,154,72,0.4)", background: "rgba(45,154,72,0.06)", padding: 14 }}>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+          <div style={{
+            ...card(),
+            borderTop: "3px solid #16A34A",
+          }}>
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--corp-text-muted)",
+              marginBottom: 8,
+            }}>
               Points forts
             </p>
-            <span style={{ fontFamily: "'VT323', monospace", fontSize: 42, color: strongest.length > 0 ? "#2D9A48" : "#5A5A5A", lineHeight: 1 }}>
+            <span style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 48,
+              fontWeight: 700,
+              color: (useMultiAgent ? strongest.length : recommendations.length) > 0 ? "#16A34A" : "var(--corp-text-muted)",
+              lineHeight: 1,
+            }}>
               {useMultiAgent ? strongest.length : recommendations.length}
             </span>
           </div>
 
           {useMultiAgent && (
-            <div style={{ border: "2px solid rgba(74,144,217,0.4)", background: "rgba(74,144,217,0.06)", padding: 14 }}>
-              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+            <div style={{
+              ...card(),
+              borderTop: "3px solid var(--corp-blue)",
+            }}>
+              <p style={{
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--corp-text-muted)",
+                marginBottom: 8,
+              }}>
                 Echanges
               </p>
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: 42, color: "#4A90D9", lineHeight: 1 }}>
+              <span style={{
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 48,
+                fontWeight: 700,
+                color: "var(--corp-blue)",
+                lineHeight: 1,
+              }}>
                 {multiAgentState.conversationHistory.filter((m) => m.role === "user").length}
               </span>
             </div>
@@ -253,25 +380,45 @@ export default function SkillsReportDashboard({
 
         {/* ── RADAR + SCORE TABLE ── */}
         {useMultiAgent && scores.length >= 3 && (
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 16, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, marginBottom: 24 }}>
 
             {/* Radar Chart */}
-            <div style={{ border: "2px solid rgba(74,144,217,0.2)", background: "rgba(74,144,217,0.04)", padding: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{
+              ...card(),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
               <RadarChart scores={scores} />
             </div>
 
             {/* Score Breakdown Table */}
-            <div style={{ border: "2px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.03)", padding: 16 }}>
-              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 12 }}>
+            <div style={card()}>
+              <p style={{
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--corp-text-muted)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 16,
+              }}>
                 Matrice des competences
               </p>
 
               {/* Table header */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 50px 80px", gap: 8, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.15em", textTransform: "uppercase" }}>Competence</span>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.15em", textTransform: "uppercase", textAlign: "center" }}>Score</span>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.15em", textTransform: "uppercase", textAlign: "center" }}>Poids</span>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.15em", textTransform: "uppercase" }}>Niveau</span>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 60px 50px 100px",
+                gap: 8,
+                marginBottom: 8,
+                paddingBottom: 8,
+                borderBottom: "1px solid var(--corp-border)",
+              }}>
+                <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600, color: "var(--corp-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Competence</span>
+                <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600, color: "var(--corp-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center" }}>Score</span>
+                <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600, color: "var(--corp-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center" }}>Poids</span>
+                <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600, color: "var(--corp-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Niveau</span>
               </div>
 
               {/* Rows */}
@@ -280,29 +427,54 @@ export default function SkillsReportDashboard({
                   key={s.topic}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 60px 50px 80px",
+                    gridTemplateColumns: "1fr 60px 50px 100px",
                     gap: 8,
-                    padding: "6px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    padding: "10px 0",
+                    borderBottom: "1px solid var(--corp-border-light, var(--corp-border))",
                     alignItems: "center",
                   }}
                 >
-                  <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 13,
+                    color: "var(--corp-text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
                     {s.topic}
                   </span>
                   <div style={{ textAlign: "center" }}>
-                    <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: scoreColor(s.score) }}>
+                    <span style={{
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: scoreColor(s.score),
+                    }}>
                       {s.score}
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
                     {Array.from({ length: 5 }, (_, i) => (
-                      <div key={i} style={{ width: 3, height: 10, background: i < s.weight ? "#4A90D9" : "rgba(255,255,255,0.08)" }} />
+                      <div key={i} style={{
+                        width: 4,
+                        height: 12,
+                        borderRadius: 2,
+                        background: i < s.weight ? "var(--corp-blue)" : "var(--corp-border)",
+                      }} />
                     ))}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", position: "relative", overflow: "hidden" }}>
-                      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${s.score}%`, background: scoreColor(s.score) }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, height: 6, background: "var(--corp-bg-subtle)", borderRadius: 3, position: "relative", overflow: "hidden" }}>
+                      <div style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${s.score}%`,
+                        borderRadius: 3,
+                        background: `linear-gradient(90deg, ${scoreColor(s.score)}cc, ${scoreColor(s.score)})`,
+                      }} />
                     </div>
                   </div>
                 </div>
@@ -311,12 +483,29 @@ export default function SkillsReportDashboard({
           </div>
         )}
 
+        {/* ── EXECUTIVE SUMMARY ── */}
         {executiveSummary && (
-          <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.08)", padding: 16, marginBottom: 16 }}>
-            <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 8px" }}>
+          <section style={{
+            ...cardSm(),
+            borderLeft: "4px solid var(--corp-blue)",
+            marginBottom: 20,
+          }}>
+            <h2 style={{
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 20,
+              color: "var(--corp-navy)",
+              margin: "0 0 10px",
+              fontWeight: 400,
+            }}>
               Synthese executive
             </h2>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#D8E7F8", lineHeight: 1.7, margin: 0 }}>
+            <p style={{
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 14,
+              color: "var(--corp-text)",
+              lineHeight: 1.8,
+              margin: 0,
+            }}>
               {executiveSummary}
             </p>
           </section>
@@ -324,36 +513,53 @@ export default function SkillsReportDashboard({
 
         {/* ── FAILURE PATTERNS + EMPLOYEE VIBE ── */}
         {(failurePatterns.length > 0 || employeeVibe) && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
 
             {/* Failure Pattern Analysis */}
-            <section style={{ border: "2px solid rgba(230,126,34,0.4)", background: "rgba(230,126,34,0.06)", padding: 16 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#E67E22", margin: "0 0 10px" }}>
+            <section style={{
+              ...cardSm(),
+              borderLeft: "4px solid #EA580C",
+            }}>
+              <h2 style={{
+                fontFamily: "var(--corp-font-heading)",
+                fontSize: 20,
+                color: "var(--corp-navy)",
+                margin: "0 0 12px",
+                fontWeight: 400,
+              }}>
                 Patterns d&apos;erreur detectes
               </h2>
               {failurePatterns.length === 0 ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucun pattern recurrent identifie.</p>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Aucun pattern recurrent identifie.</p>
               ) : (
                 failurePatterns.map((fp, idx) => (
-                  <div key={`fp-${idx}`} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid rgba(230,126,34,0.15)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", fontWeight: 700 }}>
+                  <div key={`fp-${idx}`} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid var(--corp-border-light, var(--corp-border))" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                      <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text)", fontWeight: 600 }}>
                         {fp.pattern}
                       </span>
                       <span style={{
-                        fontFamily: "'VT323', monospace", fontSize: 16, color: "#E67E22",
-                        background: "rgba(230,126,34,0.15)", padding: "2px 8px",
+                        fontFamily: "var(--corp-font-body)",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#EA580C",
+                        background: "rgba(234,88,12,0.1)",
+                        padding: "2px 10px",
+                        borderRadius: 100,
                       }}>
                         x{fp.frequency}
                       </span>
                     </div>
                     {fp.affectedSkills.length > 0 && (
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
                         {fp.affectedSkills.map((skill) => (
                           <span key={skill} style={{
-                            fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#E67E22",
-                            border: "1px solid rgba(230,126,34,0.3)", padding: "2px 6px",
-                            letterSpacing: "0.08em", textTransform: "uppercase",
+                            fontFamily: "var(--corp-font-body)",
+                            fontSize: 11,
+                            color: "#EA580C",
+                            border: "1px solid rgba(234,88,12,0.25)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
                           }}>
                             {skill}
                           </span>
@@ -361,7 +567,7 @@ export default function SkillsReportDashboard({
                       </div>
                     )}
                     {fp.recommendation && (
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#8E8B82", margin: 0 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-secondary)", margin: 0, lineHeight: 1.6 }}>
                         {fp.recommendation}
                       </p>
                     )}
@@ -371,41 +577,50 @@ export default function SkillsReportDashboard({
             </section>
 
             {/* Employee Vibe */}
-            <section style={{ border: "2px solid rgba(74,217,168,0.4)", background: "rgba(74,217,168,0.06)", padding: 16 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4AD9A8", margin: "0 0 10px" }}>
+            <section style={{
+              ...cardSm(),
+              borderLeft: "4px solid #0D9488",
+            }}>
+              <h2 style={{
+                fontFamily: "var(--corp-font-heading)",
+                fontSize: 20,
+                color: "var(--corp-navy)",
+                margin: "0 0 12px",
+                fontWeight: 400,
+              }}>
                 Vibe de l&apos;employe
               </h2>
               {employeeVibe ? (
                 <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                     <div>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 500, color: "var(--corp-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
                         Ton general
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#4AD9A8", fontWeight: 700, margin: 0 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "#0D9488", fontWeight: 600, margin: 0 }}>
                         {employeeVibe.tone}
                       </p>
                     </div>
                     <div>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "#5A5A5A", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 500, color: "var(--corp-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
                         Resistance au stress
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#4AD9A8", fontWeight: 700, margin: 0 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "#0D9488", fontWeight: 600, margin: 0 }}>
                         {employeeVibe.stressResilience}
                       </p>
                     </div>
                   </div>
-                  <div style={{ borderTop: "1px solid rgba(74,217,168,0.15)", paddingTop: 8, marginBottom: 10 }}>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", lineHeight: 1.6, margin: 0 }}>
+                  <div style={{ borderTop: "1px solid var(--corp-border-light, var(--corp-border))", paddingTop: 10, marginBottom: 12 }}>
+                    <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)", lineHeight: 1.7, margin: 0 }}>
                       {employeeVibe.overallAssessment}
                     </p>
                   </div>
                   {employeeVibe.details.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {employeeVibe.details.map((detail, idx) => (
-                        <div key={`vibe-${idx}`} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                          <div style={{ width: 3, height: 3, background: "#4AD9A8", marginTop: 5, flexShrink: 0 }} />
-                          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#8E8B82", margin: 0, lineHeight: 1.4 }}>
+                        <div key={`vibe-${idx}`} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                          <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#0D9488", marginTop: 7, flexShrink: 0 }} />
+                          <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-secondary)", margin: 0, lineHeight: 1.5 }}>
                             {detail}
                           </p>
                         </div>
@@ -414,7 +629,7 @@ export default function SkillsReportDashboard({
                   )}
                 </>
               ) : (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Analyse non disponible.</p>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Analyse non disponible.</p>
               )}
             </section>
           </div>
@@ -422,23 +637,37 @@ export default function SkillsReportDashboard({
 
         {/* ── AUTO-ANALYSIS ── */}
         {useMultiAgent && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
 
             {/* Weaknesses */}
-            <section style={{ border: "2px solid rgba(204,42,42,0.35)", background: "rgba(204,42,42,0.06)", padding: 16 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#CC2A2A", margin: "0 0 10px" }}>
+            <section style={{
+              ...cardSm(),
+              borderLeft: "4px solid #DC2626",
+            }}>
+              <h2 style={{
+                fontFamily: "var(--corp-font-heading)",
+                fontSize: 20,
+                color: "var(--corp-navy)",
+                margin: "0 0 12px",
+                fontWeight: 400,
+              }}>
                 Lacunes identifiees
               </h2>
               {weakest.length === 0 ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucune lacune majeure detectee.</p>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Aucune lacune majeure detectee.</p>
               ) : (
                 weakest.map((s) => (
-                  <div key={s.topic} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(204,42,42,0.15)" }}>
+                  <div key={s.topic} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid var(--corp-border-light, var(--corp-border))" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6" }}>{s.topic}</span>
-                      <span style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: scoreColor(s.score) }}>{s.score}/100</span>
+                      <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)" }}>{s.topic}</span>
+                      <span style={{
+                        fontFamily: "var(--corp-font-body)",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: scoreColor(s.score),
+                      }}>{s.score}/100</span>
                     </div>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", marginTop: 3 }}>
+                    <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>
                       Poids {s.weight}/5 · {s.weight >= 4 ? "Competence critique — formation prioritaire recommandee" : "Axe d'amelioration identifie"}
                     </p>
                   </div>
@@ -447,20 +676,34 @@ export default function SkillsReportDashboard({
             </section>
 
             {/* Strengths */}
-            <section style={{ border: "2px solid rgba(45,154,72,0.35)", background: "rgba(45,154,72,0.06)", padding: 16 }}>
-              <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#2D9A48", margin: "0 0 10px" }}>
+            <section style={{
+              ...cardSm(),
+              borderLeft: "4px solid #16A34A",
+            }}>
+              <h2 style={{
+                fontFamily: "var(--corp-font-heading)",
+                fontSize: 20,
+                color: "var(--corp-navy)",
+                margin: "0 0 12px",
+                fontWeight: 400,
+              }}>
                 Points forts confirmes
               </h2>
               {strongest.length === 0 ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#8E8B82" }}>Aucun point fort marque sur cette session.</p>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Aucun point fort marque sur cette session.</p>
               ) : (
                 strongest.map((s) => (
-                  <div key={s.topic} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(45,154,72,0.15)" }}>
+                  <div key={s.topic} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid var(--corp-border-light, var(--corp-border))" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6" }}>{s.topic}</span>
-                      <span style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: scoreColor(s.score) }}>{s.score}/100</span>
+                      <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)" }}>{s.topic}</span>
+                      <span style={{
+                        fontFamily: "var(--corp-font-body)",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: scoreColor(s.score),
+                      }}>{s.score}/100</span>
                     </div>
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#8E8B82", marginTop: 3 }}>
+                    <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>
                       Poids {s.weight}/5 · Maitrise confirmee en situation reelle
                     </p>
                   </div>
@@ -473,20 +716,29 @@ export default function SkillsReportDashboard({
         {/* ── LEGACY SECTIONS (fallback when no multi-agent data) ── */}
         {!useMultiAgent && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12, marginBottom: 12 }}>
-              <section style={{ border: "2px solid #A53A3A", background: "rgba(165,58,58,0.12)", padding: 16 }}>
-                <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.1em", color: "#FF8E8E", margin: "0 0 10px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 16, marginBottom: 16 }}>
+              <section style={{
+                ...cardSm(),
+                borderLeft: "4px solid #DC2626",
+              }}>
+                <h2 style={{
+                  fontFamily: "var(--corp-font-heading)",
+                  fontSize: 20,
+                  color: "var(--corp-navy)",
+                  margin: "0 0 12px",
+                  fontWeight: 400,
+                }}>
                   Top 3 lacunes critiques
                 </h2>
                 {topGaps.length === 0 ? (
-                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#C4C0B5" }}>Aucune lacune critique disponible.</p>
+                  <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Aucune lacune critique disponible.</p>
                 ) : (
                   topGaps.map((gap) => (
-                    <article key={gap.skillId} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid rgba(255,142,142,0.25)" }}>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#F3F0E6", margin: 0 }}>
+                    <article key={gap.skillId} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid var(--corp-border-light, var(--corp-border))" }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)", margin: 0, fontWeight: 500 }}>
                         {gap.skillName} · criticite {gap.criticality}
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#FFB3B3", marginTop: 4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>
                         Mastery {gap.masteryScore}/100 · Confidence {(gap.confidence * 100).toFixed(0)}%
                       </p>
                     </article>
@@ -494,19 +746,28 @@ export default function SkillsReportDashboard({
                 )}
               </section>
 
-              <section style={{ border: "2px solid #2D7A3A", background: "rgba(45,122,58,0.08)", padding: 16 }}>
-                <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.1em", color: "#7FEF98", margin: "0 0 10px" }}>
+              <section style={{
+                ...cardSm(),
+                borderLeft: "4px solid #16A34A",
+              }}>
+                <h2 style={{
+                  fontFamily: "var(--corp-font-heading)",
+                  fontSize: 20,
+                  color: "var(--corp-navy)",
+                  margin: "0 0 12px",
+                  fontWeight: 400,
+                }}>
                   Recommandations formation
                 </h2>
                 {recommendations.length === 0 ? (
-                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#C4C0B5" }}>Pas de recommandation prioritaire.</p>
+                  <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-muted)" }}>Pas de recommandation prioritaire.</p>
                 ) : (
                   recommendations.map((reco) => (
-                    <article key={reco.skillId} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid rgba(127,239,152,0.2)" }}>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#F3F0E6", margin: 0 }}>
+                    <article key={reco.skillId} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid var(--corp-border-light, var(--corp-border))" }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)", margin: 0, fontWeight: 500 }}>
                         {reco.skillName} · priorite {reco.priority}
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#BFFFCB", marginTop: 4 }}>{reco.recommendation}</p>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>{reco.recommendation}</p>
                     </article>
                   ))
                 )}
@@ -514,18 +775,32 @@ export default function SkillsReportDashboard({
             </div>
 
             {trackedSkills.length > 0 && (
-              <section style={{ marginTop: 12, border: "2px solid #F3F0E6", background: "rgba(243,240,230,0.06)", padding: 16 }}>
-                <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.1em", color: "#F3F0E6", margin: "0 0 10px" }}>
+              <section style={{
+                ...card(),
+                marginBottom: 16,
+              }}>
+                <h2 style={{
+                  fontFamily: "var(--corp-font-heading)",
+                  fontSize: 20,
+                  color: "var(--corp-navy)",
+                  margin: "0 0 12px",
+                  fontWeight: 400,
+                }}>
                   Matrice des competences (audit)
                 </h2>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                   {trackedSkills.map((skill) => (
-                    <article key={skill.id} style={{ border: "1px solid rgba(243,240,230,0.25)", padding: 10, background: "rgba(10,10,10,0.25)" }}>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#F3F0E6", margin: 0 }}>
+                    <article key={skill.id} style={{
+                      border: "1px solid var(--corp-border)",
+                      borderRadius: "var(--corp-radius-sm)",
+                      padding: 14,
+                      background: "var(--corp-bg-subtle)",
+                    }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)", margin: 0, fontWeight: 500 }}>
                         {skill.name} ({skill.criticality})
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#C4C0B5", marginTop: 4 }}>{skill.description}</p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#FFB089", marginTop: 4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>{skill.description}</p>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-secondary)", marginTop: 4 }}>
                         Mastery {skill.masteryScore}/100 · Confidence {(skill.confidence * 100).toFixed(0)}% · Attempts {skill.attempts}
                       </p>
                     </article>
@@ -535,14 +810,23 @@ export default function SkillsReportDashboard({
             )}
 
             {managerNotes.length > 0 && (
-              <section style={{ marginTop: 12, border: "2px solid #F3F0E6", background: "rgba(243,240,230,0.06)", padding: 16 }}>
-                <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.1em", color: "#F3F0E6", margin: "0 0 10px" }}>
+              <section style={{
+                ...card(),
+                marginBottom: 16,
+              }}>
+                <h2 style={{
+                  fontFamily: "var(--corp-font-heading)",
+                  fontSize: 20,
+                  color: "var(--corp-navy)",
+                  margin: "0 0 12px",
+                  fontWeight: 400,
+                }}>
                   Notes manager
                 </h2>
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 10 }}>
                   {managerNotes.map((note, index) => (
-                    <div key={`${index}-${note.slice(0, 20)}`} style={{ borderLeft: "3px solid #4A90D9", paddingLeft: 10 }}>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#F3F0E6", margin: 0 }}>{note}</p>
+                    <div key={`${index}-${note.slice(0, 20)}`} style={{ borderLeft: "3px solid var(--corp-blue)", paddingLeft: 14 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text)", margin: 0, lineHeight: 1.6 }}>{note}</p>
                     </div>
                   ))}
                 </div>
@@ -551,18 +835,48 @@ export default function SkillsReportDashboard({
           </>
         )}
 
+        {/* ── ACTION PLAN ── */}
         {actionPlan7Days.length > 0 && (
-          <section style={{ border: "2px solid rgba(74,144,217,0.3)", background: "rgba(74,144,217,0.05)", padding: 14, marginTop: 12 }}>
-            <h2 style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", color: "#4A90D9", margin: "0 0 10px" }}>
-              Plan de remédiation immédiat
+          <section style={{
+            ...card(),
+            marginBottom: 20,
+          }}>
+            <h2 style={{
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 20,
+              color: "var(--corp-navy)",
+              margin: "0 0 14px",
+              fontWeight: 400,
+            }}>
+              Plan de remediation immediat
             </h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               {actionPlan7Days.slice(0, 3).map((item, idx) => (
-                <div key={`${idx}-${item.slice(0, 12)}`} style={{ background: "rgba(74,144,217,0.08)", border: "1px solid rgba(74,144,217,0.2)", padding: "10px 12px" }}>
-                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#4A90D9", margin: "0 0 4px", letterSpacing: "0.1em" }}>
-                    ACTION {idx + 1}
+                <div key={`${idx}-${item.slice(0, 12)}`} style={{
+                  background: "var(--corp-bg-subtle)",
+                  borderLeft: "3px solid var(--corp-blue)",
+                  borderRadius: "var(--corp-radius-sm)",
+                  boxShadow: "var(--corp-shadow-sm)",
+                  padding: "14px 16px",
+                }}>
+                  <p style={{
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--corp-blue)",
+                    margin: "0 0 6px",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}>
+                    Action {idx + 1}
                   </p>
-                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#F3F0E6", margin: 0, lineHeight: 1.5 }}>
+                  <p style={{
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 14,
+                    color: "var(--corp-text)",
+                    margin: 0,
+                    lineHeight: 1.6,
+                  }}>
                     {item}
                   </p>
                 </div>
@@ -572,11 +886,26 @@ export default function SkillsReportDashboard({
         )}
 
         {/* ── FOOTER ── */}
-        <div style={{ marginTop: 24, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.1em" }}>
-            Genere par RAG-to-RPG · Powered by Mistral AI + ElevenLabs
+        <div style={{
+          marginTop: 24,
+          paddingTop: 16,
+          borderTop: "1px solid var(--corp-border)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <p style={{
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 12,
+            color: "var(--corp-text-muted)",
+          }}>
+            Genere par YouGotIt · Powered by Mistral AI
           </p>
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A" }}>
+          <p style={{
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 12,
+            color: "var(--corp-text-muted)",
+          }}>
             {new Date().toLocaleString("fr-FR")}
           </p>
         </div>

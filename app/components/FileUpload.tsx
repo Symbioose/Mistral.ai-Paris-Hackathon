@@ -12,6 +12,7 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ filename: string; charCount: number; snippet: string } | null>(null);
   const [documentText, setDocumentText] = useState<string | null>(null);
+  const [hoverLaunch, setHoverLaunch] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(async (file: File) => {
@@ -68,7 +69,7 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 520 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
 
       {/* Drop zone */}
       <div
@@ -77,14 +78,22 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         style={{
-          border:         `3px solid ${isDragging ? "#FF5B22" : preview ? "#2D7A3A" : "#1A1A1A"}`,
-          background:     isDragging ? "rgba(255,91,34,0.05)" : preview ? "rgba(45,122,58,0.04)" : "#FAFAF7",
-          padding:        "40px 32px",
-          cursor:         isLoading ? "wait" : "pointer",
-          textAlign:      "center",
-          boxShadow:      `4px 4px 0 ${isDragging ? "#FF5B22" : preview ? "#2D7A3A" : "#1A1A1A"}`,
-          transition:     "all 0.15s",
-          userSelect:     "none",
+          border: isDragging
+            ? "2px dashed var(--corp-blue)"
+            : preview
+              ? "2px solid var(--corp-success)"
+              : "2px dashed var(--corp-border)",
+          background: isDragging
+            ? "rgba(37,99,235,0.04)"
+            : preview
+              ? "rgba(5,150,105,0.04)"
+              : "var(--corp-bg-subtle)",
+          borderRadius: 16,
+          padding: "48px 32px",
+          cursor: isLoading ? "wait" : "pointer",
+          textAlign: "center",
+          transition: "all 0.2s ease",
+          userSelect: "none",
         }}
       >
         <input
@@ -96,50 +105,57 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
         />
 
         {isLoading ? (
-          <div>
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 4, height: 32, marginBottom: 12 }}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="animate-soundwave"
-                  style={{ width: 4, height: "100%", background: "#FF5B22", animationDelay: `${i * 80}ms` }}
-                />
-              ))}
-            </div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#5A5A5A" }}>
-              EXTRACTION EN COURS...
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 40,
+              height: 40,
+              border: "3px solid rgba(37,99,235,0.2)",
+              borderTop: "3px solid var(--corp-blue)",
+              borderRadius: "50%",
+              animation: "corp-spinner 0.8s linear infinite",
+            }} />
+            <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text-secondary)", margin: 0 }}>
+              Extraction en cours...
             </p>
           </div>
         ) : preview ? (
-          <div>
-            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 28, color: "#2D7A3A", marginBottom: 8 }}>✓</div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, color: "#2D7A3A", marginBottom: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" fill="rgba(5,150,105,0.1)" stroke="var(--corp-success)" strokeWidth="1.5" />
+              <polyline points="9 12 11 14 15 10" fill="none" stroke="var(--corp-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 16, fontWeight: 600, color: "var(--corp-navy)", marginTop: 12, marginBottom: 4 }}>
               {preview.filename}
             </p>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A", letterSpacing: "0.1em" }}>
-              {preview.charCount.toLocaleString()} caracteres extraits
+            <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-secondary)", margin: 0 }}>
+              {preview.charCount.toLocaleString()} caractères extraits
             </p>
           </div>
         ) : (
-          <div>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📄</div>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1A1A1A", marginBottom: 8 }}>
-              Deposer votre document ici
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--corp-text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 16, fontWeight: 600, color: "var(--corp-navy)", marginTop: 16, marginBottom: 0 }}>
+              Déposez votre document ici
             </p>
-            <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.05em" }}>
-              ou cliquer pour selectionner
+            <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text-secondary)", marginTop: 8, marginBottom: 0 }}>
+              ou cliquez pour sélectionner
             </p>
-            <div style={{ marginTop: 16, display: "flex", justifyContent: "center", gap: 8 }}>
+            <div style={{ marginTop: 20, display: "flex", justifyContent: "center", gap: 8 }}>
               {[".TXT", ".PDF"].map((ext) => (
                 <span
                   key={ext}
                   style={{
-                    fontFamily: "'Space Mono', monospace",
-                    fontSize:   9,
-                    padding:    "3px 8px",
-                    border:     "1px solid #1A1A1A",
-                    color:      "#1A1A1A",
-                    letterSpacing: "0.1em",
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 12,
+                    padding: "4px 12px",
+                    border: "1px solid var(--corp-border)",
+                    borderRadius: 6,
+                    color: "var(--corp-text-muted)",
+                    background: "var(--corp-bg-subtle)",
                   }}
                 >
                   {ext}
@@ -154,16 +170,17 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
       {preview && (
         <div
           style={{
-            background:    "#1A1A1A",
-            border:        "2px solid #1A1A1A",
-            padding:       "12px 16px",
-            boxShadow:     "3px 3px 0 #5A5A5A",
+            background: "var(--corp-bg-subtle)",
+            border: "1px solid var(--corp-border)",
+            borderRadius: 12,
+            padding: "16px 20px",
+            boxShadow: "var(--corp-shadow-sm)",
           }}
         >
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.15em", marginBottom: 6, textTransform: "uppercase" }}>
-            Apercu du contenu
+          <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600, color: "var(--corp-blue)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8, marginTop: 0 }}>
+            Aperçu du contenu
           </p>
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#C4C0B5", lineHeight: 1.6 }}>
+          <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-text-secondary)", lineHeight: 1.6, margin: 0 }}>
             {preview.snippet}...
           </p>
         </div>
@@ -171,8 +188,8 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
 
       {/* Error */}
       {error && (
-        <div style={{ border: "2px solid #CC2A2A", padding: "10px 14px", background: "rgba(204,42,42,0.05)" }}>
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#CC2A2A" }}>
+        <div style={{ border: "1px solid var(--corp-danger)", borderRadius: 8, padding: "12px 16px", background: "rgba(220,38,38,0.04)" }}>
+          <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-danger)", margin: 0 }}>
             {error}
           </p>
         </div>
@@ -182,33 +199,26 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
       {preview && documentText && (
         <button
           onClick={handleLaunch}
+          onMouseEnter={() => setHoverLaunch(true)}
+          onMouseLeave={() => setHoverLaunch(false)}
           style={{
-            fontFamily:    "'Space Mono', monospace",
-            fontSize:      13,
-            fontWeight:    700,
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            padding:       "16px 24px",
-            background:    "#FF5B22",
-            color:         "#F3F0E6",
-            border:        "3px solid #FF5B22",
-            boxShadow:     "5px 5px 0 #CC4919",
-            cursor:        "pointer",
-            transition:    "all 0.1s",
-            width:         "100%",
-          }}
-          onMouseEnter={(e) => {
-            const b = e.currentTarget;
-            b.style.boxShadow = "2px 2px 0 #CC4919";
-            b.style.transform = "translate(3px,3px)";
-          }}
-          onMouseLeave={(e) => {
-            const b = e.currentTarget;
-            b.style.boxShadow = "5px 5px 0 #CC4919";
-            b.style.transform = "translate(0,0)";
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: "0.02em",
+            padding: "16px 24px",
+            background: hoverLaunch ? "#1D4ED8" : "var(--corp-blue)",
+            color: "white",
+            border: "none",
+            borderRadius: 12,
+            boxShadow: hoverLaunch ? "var(--corp-shadow-lg)" : "var(--corp-shadow-md)",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            width: "100%",
+            transform: hoverLaunch ? "translateY(-1px)" : "translateY(0)",
           }}
         >
-          Lancer le Serious Game &rarr;
+          Lancer la simulation →
         </button>
       )}
 
@@ -217,16 +227,17 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
         <button
           onClick={() => { setPreview(null); setDocumentText(null); setError(null); }}
           style={{
-            fontFamily:    "'Space Mono', monospace",
-            fontSize:      9,
-            color:         "#5A5A5A",
-            background:    "transparent",
-            border:        "none",
-            cursor:        "pointer",
-            textDecoration:"underline",
-            letterSpacing: "0.1em",
-            textAlign:     "center",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 13,
+            color: "var(--corp-blue)",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center",
+            padding: 0,
           }}
+          onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
         >
           Changer de document
         </button>
