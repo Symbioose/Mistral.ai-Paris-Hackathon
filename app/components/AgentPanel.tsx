@@ -3,11 +3,11 @@
 import { AgentState, Scenario } from "@/app/lib/types";
 
 const VOICE_COLORS: Record<string, string> = {
-  authoritative_male: "#4A90D9",
-  warm_female: "#D94A8C",
-  stressed_young: "#D9A84A",
-  calm_narrator: "#4AD9A8",
-  gruff_veteran: "#9B59B6",
+  authoritative_male: "#3B82F6",
+  warm_female: "#EC4899",
+  stressed_young: "#F59E0B",
+  calm_narrator: "#10B981",
+  gruff_veteran: "#8B5CF6",
 };
 
 const EMOTION_LABELS: Record<string, string> = {
@@ -19,11 +19,11 @@ const EMOTION_LABELS: Record<string, string> = {
 };
 
 const EVENT_CONFIG: Record<string, { icon: string; color: string }> = {
-  crisis: { icon: "⚠", color: "#CC2A2A" },
-  new_character: { icon: "◉", color: "#4A90D9" },
-  plot_twist: { icon: "⟳", color: "#D94A8C" },
-  chaos: { icon: "⚡", color: "#D9A84A" },
-  learning: { icon: "✦", color: "#7AB648" },
+  crisis: { icon: "⚠", color: "#EF4444" },
+  new_character: { icon: "◉", color: "#3B82F6" },
+  plot_twist: { icon: "⟳", color: "#EC4899" },
+  chaos: { icon: "⚡", color: "#F59E0B" },
+  learning: { icon: "✦", color: "#10B981" },
 };
 
 interface AgentPanelProps {
@@ -59,8 +59,8 @@ export default function AgentPanel({
       <div
         style={{
           padding: "16px 14px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(74,144,217,0.04)",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.03)",
         }}
       >
         {/* Act progress bar */}
@@ -74,10 +74,10 @@ export default function AgentPanel({
                   style={{
                     height: 4,
                     background: isDone
-                      ? "#4A90D9"
+                      ? "#3B82F6"
                       : isCurrent
-                        ? "rgba(74,144,217,0.5)"
-                        : "rgba(255,255,255,0.07)",
+                        ? "rgba(59,130,246,0.3)"
+                        : "rgba(255,255,255,0.08)",
                     transition: "background 0.4s",
                   }}
                 />
@@ -90,7 +90,7 @@ export default function AgentPanel({
                       right: 0,
                       height: 4,
                       background:
-                        "linear-gradient(90deg, #4A90D9 0%, transparent 100%)",
+                        "linear-gradient(90deg, #3B82F6 0%, transparent 100%)",
                       animation: "pulse-shimmer 2s ease-in-out infinite",
                     }}
                   />
@@ -104,10 +104,10 @@ export default function AgentPanel({
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: "#5A5A5A",
-              letterSpacing: "0.15em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.50)",
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
           >
@@ -115,9 +115,9 @@ export default function AgentPanel({
           </span>
           <span
             style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 16,
-              color: "#4A90D9",
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 18,
+              color: "#F59E0B",
               letterSpacing: "0.05em",
             }}
           >
@@ -129,10 +129,10 @@ export default function AgentPanel({
         {currentActInfo && (
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 9,
-              fontWeight: 700,
-              color: "rgba(243,240,230,0.55)",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "rgba(255,255,255,0.75)",
               marginTop: 8,
               letterSpacing: "0.04em",
             }}
@@ -147,15 +147,16 @@ export default function AgentPanel({
             style={{
               marginTop: 10,
               padding: "6px 10px",
-              border: "1px solid rgba(122,182,72,0.4)",
-              background: "rgba(122,182,72,0.08)",
+              border: "1px solid rgba(16,185,129,0.3)",
+              background: "rgba(16,185,129,0.08)",
+              borderRadius: 8,
             }}
           >
             <p
               style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 8,
-                color: "#9CD56A",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 11,
+                color: "#10B981",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
@@ -166,8 +167,8 @@ export default function AgentPanel({
             </p>
             <p
               style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 8,
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 11,
                 color: "rgba(255,255,255,0.6)",
                 lineHeight: 1.45,
               }}
@@ -182,15 +183,15 @@ export default function AgentPanel({
       <div
         style={{
           padding: "12px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}
       >
         <p
           style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 8,
-            color: "#5A5A5A",
-            letterSpacing: "0.15em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 11,
+            color: "rgba(255,255,255,0.50)",
+            letterSpacing: "0.08em",
             textTransform: "uppercase",
             marginBottom: 8,
           }}
@@ -211,8 +212,9 @@ export default function AgentPanel({
                   alignItems: "center",
                   gap: 8,
                   padding: "7px 10px",
-                  background: isActive ? `${color}0E` : "transparent",
-                  border: isActive ? `1px solid ${color}30` : "1px solid transparent",
+                  background: isActive ? `${color}0F` : "transparent",
+                  borderLeft: isActive ? `3px solid ${color}` : "3px solid transparent",
+                  borderRadius: 8,
                   transition: "all 0.35s ease",
                 }}
               >
@@ -224,7 +226,6 @@ export default function AgentPanel({
                       height: 7,
                       borderRadius: "50%",
                       background: isActive ? color : "rgba(255,255,255,0.12)",
-                      boxShadow: isActive ? `0 0 8px ${color}` : "none",
                       transition: "all 0.35s ease",
                     }}
                   />
@@ -245,10 +246,10 @@ export default function AgentPanel({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p
                     style={{
-                      fontFamily: "'Space Mono', monospace",
-                      fontSize: 10,
-                      fontWeight: isActive ? 700 : 400,
-                      color: isActive ? "#F3F0E6" : "rgba(255,255,255,0.4)",
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 13,
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.50)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -271,9 +272,9 @@ export default function AgentPanel({
                   </p>
                   <p
                     style={{
-                      fontFamily: "'Space Mono', monospace",
-                      fontSize: 7,
-                      color: isActive ? color : "#5A5A5A",
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 10,
+                      color: isActive ? color : "rgba(255,255,255,0.4)",
                       letterSpacing: "0.06em",
                       transition: "color 0.35s ease",
                     }}
@@ -285,8 +286,8 @@ export default function AgentPanel({
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
                   <p
                     style={{
-                      fontFamily: "'Space Mono', monospace",
-                      fontSize: 7,
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 10,
                       color: "rgba(255,255,255,0.25)",
                       letterSpacing: "0.04em",
                     }}
@@ -296,8 +297,8 @@ export default function AgentPanel({
                   {interactionCount > 0 && (
                     <p
                       style={{
-                        fontFamily: "'Space Mono', monospace",
-                        fontSize: 7,
+                        fontFamily: "var(--corp-font-body)",
+                        fontSize: 10,
                         color: "rgba(255,255,255,0.18)",
                       }}
                     >
@@ -316,10 +317,10 @@ export default function AgentPanel({
         <div style={{ padding: "12px 14px" }}>
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: "#5A5A5A",
-              letterSpacing: "0.15em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               marginBottom: 8,
             }}
@@ -353,8 +354,8 @@ export default function AgentPanel({
                   </span>
                   <p
                     style={{
-                      fontFamily: "'Space Mono', monospace",
-                      fontSize: 8,
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 11,
                       color: isLatest
                         ? "rgba(255,255,255,0.6)"
                         : "rgba(255,255,255,0.3)",

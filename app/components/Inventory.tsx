@@ -14,10 +14,10 @@ export default function Inventory({ items }: InventoryProps) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5A5A5A", fontWeight: 700 }}>
+        <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.50)", fontWeight: 500 }}>
           Inventaire
         </span>
-        <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A" }}>
+        <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "rgba(255,255,255,0.50)" }}>
           {items.length}/{maxSlots}
         </span>
       </div>
@@ -34,14 +34,14 @@ export default function Inventory({ items }: InventoryProps) {
               style={{
                 position:      "relative",
                 aspectRatio:   "1",
-                border:        item ? "2px solid #1A1A1A" : "2px dashed #C4C0B5",
-                background:    item ? "#FAFAF7" : "#EBE8DE",
+                border:        item ? "1px solid rgba(255,255,255,0.15)" : "1px dashed rgba(255,255,255,0.15)",
+                background:    item ? "rgba(31,35,48,0.6)" : "rgba(255,255,255,0.03)",
+                borderRadius:  8,
                 display:       "flex",
                 alignItems:    "center",
                 justifyContent:"center",
-                cursor:        item ? "default" : "default",
-                boxShadow:     item ? "3px 3px 0 #1A1A1A" : "none",
-                transition:    "box-shadow 0.15s",
+                cursor:        "default",
+                transition:    "background 0.15s",
               }}
             >
               {item ? (
@@ -58,23 +58,24 @@ export default function Inventory({ items }: InventoryProps) {
                         transform:  "translateX(-50%)",
                         zIndex:     50,
                         width:      160,
-                        background: "#1A1A1A",
-                        border:     "2px solid #FF5B22",
+                        background: "#272B3A",
+                        border:     "1px solid rgba(255,255,255,0.15)",
+                        borderRadius: 8,
                         padding:    "8px 10px",
                         pointerEvents: "none",
                       }}
                     >
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, color: "#FF5B22", marginBottom: 4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 700, color: "#F59E0B", marginBottom: 4 }}>
                         {item.name}
                       </p>
-                      <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#C4C0B5", lineHeight: 1.4 }}>
+                      <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "rgba(255,255,255,0.70)", lineHeight: 1.4 }}>
                         {item.description}
                       </p>
                     </div>
                   )}
                 </>
               ) : (
-                <div style={{ width: 20, height: 20, border: "1px dashed #C4C0B5" }} />
+                <div style={{ width: 20, height: 20, border: "1px dashed rgba(255,255,255,0.15)", borderRadius: 4 }} />
               )}
             </div>
           );

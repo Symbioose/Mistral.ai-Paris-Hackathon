@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 function scoreColor(score: number): string {
-  if (score < 30) return "#CC2A2A";
-  if (score < 50) return "#D9754A";
-  if (score < 70) return "#D9A84A";
-  if (score < 85) return "#7AB648";
-  return "#2D9A48";
+  if (score < 30) return "#EF4444";
+  if (score < 50) return "#F97316";
+  if (score < 70) return "#F59E0B";
+  if (score < 85) return "#10B981";
+  return "#34D399";
 }
 
 function scoreLabel(score: number): string {
@@ -75,7 +75,7 @@ export default function SimulationEndOverlay({
         position: "fixed",
         inset: 0,
         zIndex: 200,
-        background: "rgba(0,0,0,0.96)",
+        background: "rgba(17,19,24,0.98)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -83,17 +83,6 @@ export default function SimulationEndOverlay({
         animation: "fade-in 0.6s ease-out forwards",
       }}
     >
-      {/* CRT scanlines */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.025,
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,1) 2px, rgba(255,255,255,1) 4px)",
-          pointerEvents: "none",
-        }}
-      />
 
       <div
         style={{
@@ -107,11 +96,16 @@ export default function SimulationEndOverlay({
         {/* Conclusion tag */}
         <div
           style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 9,
-            letterSpacing: "0.38em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 12,
+            letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: conclusionColor,
+            color: "#FFFFFF",
+            background: conclusionColor,
+            padding: "4px 16px",
+            borderRadius: 100,
+            display: "inline-block",
+            fontWeight: 600,
             marginBottom: 18,
           }}
         >
@@ -121,11 +115,11 @@ export default function SimulationEndOverlay({
         {/* Big title */}
         <div
           style={{
-            fontFamily: "'VT323', monospace",
-            fontSize: 62,
-            color: "#F3F0E6",
-            letterSpacing: "0.06em",
-            lineHeight: 0.95,
+            fontFamily: "var(--corp-font-heading)",
+            fontSize: 48,
+            color: "#FFFFFF",
+            fontWeight: 400,
+            lineHeight: 1.1,
             marginBottom: 36,
           }}
         >
@@ -144,9 +138,10 @@ export default function SimulationEndOverlay({
         >
           <span
             style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 80,
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 72,
               color,
+              textShadow: `0 0 20px ${color}40`,
               lineHeight: 1,
             }}
           >
@@ -154,9 +149,9 @@ export default function SimulationEndOverlay({
           </span>
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 16,
-              color: "rgba(255,255,255,0.25)",
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 20,
+              color: "rgba(255,255,255,0.35)",
             }}
           >
             /100
@@ -167,14 +162,15 @@ export default function SimulationEndOverlay({
         <div
           style={{
             display: "inline-block",
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: "0.24em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: "#1A1A1A",
+            color: "#FFFFFF",
             background: color,
-            padding: "5px 16px",
+            borderRadius: 100,
+            padding: "4px 16px",
             marginBottom: 36,
           }}
         >
@@ -184,19 +180,20 @@ export default function SimulationEndOverlay({
         {/* Final agent message */}
         <div
           style={{
-            border: "1px solid rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 12,
             padding: "16px 20px",
             marginBottom: 36,
             textAlign: "left",
-            background: "rgba(255,255,255,0.03)",
+            background: "rgba(31,35,48,0.6)",
             minHeight: 68,
           }}
         >
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 10,
-              color: "rgba(243,240,230,0.68)",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 15,
+              color: "rgba(255,255,255,0.8)",
               lineHeight: 1.75,
               margin: 0,
             }}
@@ -207,7 +204,7 @@ export default function SimulationEndOverlay({
                 display: "inline-block",
                 width: 2,
                 height: "0.9em",
-                background: "#4A90D9",
+                background: "#3B82F6",
                 marginLeft: 2,
                 verticalAlign: "text-bottom",
                 animation: "typewriter-cursor 0.8s ease-in-out infinite",
@@ -220,10 +217,10 @@ export default function SimulationEndOverlay({
         <div>
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: "#5A5A5A",
-              letterSpacing: "0.2em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
               marginBottom: 8,
             }}
@@ -235,7 +232,7 @@ export default function SimulationEndOverlay({
           <div
             style={{
               height: 6,
-              background: "rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.08)",
               position: "relative",
               overflow: "hidden",
             }}
@@ -247,7 +244,7 @@ export default function SimulationEndOverlay({
                 top: 0,
                 bottom: 0,
                 width: isGeneratingReport ? "72%" : "100%",
-                background: "#4A90D9",
+                background: "#3B82F6",
                 transition: "width 0.2s ease-out",
               }}
             />
@@ -257,15 +254,17 @@ export default function SimulationEndOverlay({
             disabled={isGeneratingReport}
             style={{
               marginTop: 16,
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.14em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 15,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
-              color: "#F3F0E6",
-              background: isGeneratingReport ? "rgba(74,144,217,0.35)" : "#4A90D9",
-              border: "2px solid #4A90D9",
-              padding: "10px 18px",
+              color: "#FFFFFF",
+              background: isGeneratingReport ? "rgba(59,130,246,0.3)" : "#3B82F6",
+              boxShadow: isGeneratingReport ? "none" : "0 4px 16px rgba(59,130,246,0.3)",
+              border: "none",
+              borderRadius: 12,
+              padding: "12px 24px",
               cursor: isGeneratingReport ? "not-allowed" : "pointer",
             }}
           >

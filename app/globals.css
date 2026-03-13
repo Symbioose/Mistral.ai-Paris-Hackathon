@@ -41,6 +41,21 @@
   --corp-radius-xl:      24px;
   --corp-font-heading:   'Instrument Serif', serif;
   --corp-font-body:      'DM Sans', sans-serif;
+
+  /* ===== SLATE VIVANT DESIGN SYSTEM ===== */
+  --sim-bg-deep: #111318;
+  --sim-bg: #181B23;
+  --sim-bg-raised: #1F2330;
+  --sim-bg-elevated: #272B3A;
+  --sim-accent-primary: #3B82F6;
+  --sim-accent-warm: #F59E0B;
+  --sim-accent-success: #10B981;
+  --sim-accent-danger: #EF4444;
+  --sim-accent-violet: #8B5CF6;
+  --sim-text-primary: rgba(255,255,255,0.95);
+  --sim-text-secondary: rgba(255,255,255,0.70);
+  --sim-text-tertiary: rgba(255,255,255,0.50);
+  --sim-text-muted: rgba(255,255,255,0.30);
 }
 
 @theme inline {
@@ -67,10 +82,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ===== SCROLLBAR RETRO ===== */
+/* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar       { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-dark); }
-::-webkit-scrollbar-thumb { background: var(--fg); }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 
 /* ===== ANIMATIONS ===== */
 
@@ -125,14 +140,6 @@ body {
 }
 .animate-blink { animation: blink 0.7s step-end infinite; }
 
-/* Scanline */
-@keyframes scanline {
-  0%   { transform: translateY(-10px); opacity: 0.03; }
-  50%  { opacity: 0.06; }
-  100% { transform: translateY(100vh); opacity: 0.03; }
-}
-.animate-scanline { animation: scanline 6s linear infinite; }
-
 /* Fade in */
 @keyframes fade-in {
   0%   { opacity: 0; transform: translateY(8px); }
@@ -140,14 +147,6 @@ body {
 }
 .animate-fade-in { animation: fade-in 0.4s ease-out; }
 
-/* Retro flicker */
-@keyframes flicker {
-  0%, 95%, 100% { opacity: 1; }
-  96%            { opacity: 0.85; }
-  97%            { opacity: 1; }
-  98%            { opacity: 0.9; }
-}
-.animate-flicker { animation: flicker 8s ease-in-out infinite; }
 
 /* Pulse for recording */
 @keyframes pulse-ring {
@@ -156,12 +155,6 @@ body {
 }
 .animate-pulse-ring { animation: pulse-ring 1.2s ease-out infinite; }
 
-/* Game over */
-@keyframes game-over-flash {
-  0%, 100% { color: var(--danger); }
-  50%       { color: #FF6B6B; }
-}
-.animate-game-over { animation: game-over-flash 1.5s ease-in-out infinite; }
 
 /* HP bar damage flash */
 @keyframes damage-flash {
@@ -209,12 +202,12 @@ body {
 
 /* ===== AGENT GENERATION VIEW ===== */
 
-/* Glow pulse for central brain node */
-@keyframes glow-pulse {
-  0%, 100% { transform: scale(1);   opacity: 0.6; }
-  50%       { transform: scale(1.15); opacity: 1; }
+/* Subtle simulation pulse */
+@keyframes sim-pulse {
+  0%, 100% { transform: scale(1);   opacity: 0.5; }
+  50%       { transform: scale(1.1); opacity: 1; }
 }
-.animate-glow-pulse { animation: glow-pulse 2s ease-in-out infinite; }
+.animate-sim-pulse { animation: sim-pulse 2.5s ease-in-out infinite; }
 
 /* ===== CORPORATE ANIMATIONS ===== */
 

@@ -11,35 +11,35 @@ interface SidePanelProps {
   modeSubtitle?: string;
 }
 
-export default function SidePanel({ gameState, modeLabel = "Simulation Formation", modeSubtitle = "Mistral Adaptive Engine" }: SidePanelProps) {
+export default function SidePanel({ gameState, modeLabel = "Simulation Formation", modeSubtitle = "Adaptive Engine" }: SidePanelProps) {
   return (
     <aside
       style={{
         height:       "100%",
         display:      "flex",
         flexDirection:"column",
-        background:   "#F3F0E6",
-        borderLeft:   "4px solid #1A1A1A",
+        background:   "#181B23",
+        borderLeft:   "1px solid rgba(255,255,255,0.10)",
       }}
     >
       {/* Header */}
       <div
         style={{
           padding:      "16px 20px 12px",
-          borderBottom: "2px solid #1A1A1A",
-          background:   "#1A1A1A",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background:   "#1F2330",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 10, height: 10, background: "#FF5B22" }} />
+          <div style={{ width: 10, height: 10, background: "#F59E0B", borderRadius: "50%" }} />
           <h2
             style={{
-              fontFamily:    "'Space Mono', monospace",
+              fontFamily:    "var(--corp-font-body)",
               fontSize:      11,
               fontWeight:    700,
               letterSpacing: "0.2em",
               textTransform: "uppercase",
-              color:         "#F3F0E6",
+              color:         "rgba(255,255,255,0.90)",
             }}
           >
             Tableau de bord
@@ -48,10 +48,10 @@ export default function SidePanel({ gameState, modeLabel = "Simulation Formation
 
         {gameState.isGameStarted && (
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#FF5B22", letterSpacing: "0.1em" }}>
+            <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "#F59E0B", letterSpacing: "0.1em" }}>
               STATION : {gameState.currentStation.toUpperCase()}
             </span>
-            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A" }}>
+            <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "rgba(255,255,255,0.50)" }}>
               Tour {gameState.turnCount}
             </span>
           </div>
@@ -71,11 +71,11 @@ export default function SidePanel({ gameState, modeLabel = "Simulation Formation
       >
         <HealthBar hp={gameState.hp} maxHp={gameState.maxHp} />
 
-        <div style={{ height: 2, background: "#1A1A1A" }} />
+        <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
 
         <Inventory items={gameState.inventory} />
 
-        <div style={{ height: 2, background: "#1A1A1A" }} />
+        <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
 
         <DiceLog rolls={gameState.diceLog} />
       </div>
@@ -84,15 +84,15 @@ export default function SidePanel({ gameState, modeLabel = "Simulation Formation
       <div
         style={{
           padding:   "10px 20px",
-          borderTop: "2px solid #1A1A1A",
-          background: "#E8E4D9",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
+          background: "#1F2330",
         }}
       >
         <p
           style={{
-            fontFamily:    "'Space Mono', monospace",
+            fontFamily:    "var(--corp-font-body)",
             fontSize:      8,
-            color:         "#5A5A5A",
+            color:         "rgba(255,255,255,0.40)",
             textAlign:     "center",
             letterSpacing: "0.15em",
             textTransform: "uppercase",

@@ -6,11 +6,11 @@ interface KnowledgeHeatmapProps {
 }
 
 function scoreColor(score: number): string {
-  if (score < 30) return "#CC2A2A";
-  if (score < 50) return "#D9754A";
-  if (score < 70) return "#D9A84A";
-  if (score < 85) return "#7AB648";
-  return "#2D9A48";
+  if (score < 30) return "#DC2626";
+  if (score < 50) return "#EA580C";
+  if (score < 70) return "#D97706";
+  if (score < 85) return "#059669";
+  return "#16A34A";
 }
 
 function scoreLabel(score: number): string {
@@ -43,10 +43,10 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
         <div>
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: "#5A5A5A",
-              letterSpacing: "0.15em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               marginBottom: 4,
             }}
@@ -55,8 +55,8 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
           </p>
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
               color: "rgba(255,255,255,0.3)",
               letterSpacing: "0.05em",
             }}
@@ -67,7 +67,7 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
         <div style={{ textAlign: "right" }}>
           <span
             style={{
-              fontFamily: "'VT323', monospace",
+              fontFamily: "var(--corp-font-heading)",
               fontSize: 32,
               color,
               lineHeight: 1,
@@ -78,7 +78,7 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
           </span>
           <span
             style={{
-              fontFamily: "'VT323', monospace",
+              fontFamily: "var(--corp-font-heading)",
               fontSize: 16,
               color: "rgba(255,255,255,0.3)",
             }}
@@ -133,17 +133,17 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
                           height: 5,
                           background:
                             i < weight
-                              ? "rgba(255,255,255,0.3)"
-                              : "rgba(255,255,255,0.06)",
+                              ? "rgba(255,255,255,0.15)"
+                              : "rgba(255,255,255,0.05)",
                         }}
                       />
                     ))}
                   </div>
                   <span
                     style={{
-                      fontFamily: "'Space Mono', monospace",
-                      fontSize: 8,
-                      color: "rgba(255,255,255,0.45)",
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 12,
+                      color: "rgba(255,255,255,0.5)",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -154,9 +154,9 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
                 </div>
                 <span
                   style={{
-                    fontFamily: "'Space Mono', monospace",
-                    fontSize: 9,
-                    fontWeight: 700,
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 13,
+                    fontWeight: 600,
                     color: c,
                     letterSpacing: "0.04em",
                     flexShrink: 0,

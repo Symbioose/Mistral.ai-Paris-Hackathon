@@ -3,11 +3,11 @@
 import { AgentState } from "@/app/lib/types";
 
 const VOICE_COLORS: Record<string, string> = {
-  authoritative_male: "#4A90D9",
-  warm_female: "#D94A8C",
-  stressed_young: "#D9A84A",
-  calm_narrator: "#4AD9A8",
-  gruff_veteran: "#9B59B6",
+  authoritative_male: "#3B82F6",
+  warm_female: "#EC4899",
+  stressed_young: "#F59E0B",
+  calm_narrator: "#10B981",
+  gruff_veteran: "#8B5CF6",
 };
 
 const EMOTION_LABELS: Record<string, string> = {
@@ -41,8 +41,10 @@ export default function ActiveAgentDisplay({ agentState }: ActiveAgentDisplayPro
         alignItems: "center",
         gap: 12,
         padding: "8px 16px",
-        border: `1px solid ${color}44`,
-        background: `${color}0A`,
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 8,
+        background: `${color}12`,
+        boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
       }}
     >
       {/* Agent indicator */}
@@ -52,7 +54,6 @@ export default function ActiveAgentDisplay({ agentState }: ActiveAgentDisplayPro
           height: 10,
           borderRadius: "50%",
           background: color,
-          boxShadow: `0 0 8px ${color}88`,
           flexShrink: 0,
         }}
       />
@@ -62,10 +63,10 @@ export default function ActiveAgentDisplay({ agentState }: ActiveAgentDisplayPro
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#F3F0E6",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#FFFFFF",
               letterSpacing: "0.04em",
             }}
           >
@@ -73,9 +74,9 @@ export default function ActiveAgentDisplay({ agentState }: ActiveAgentDisplayPro
           </span>
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: color,
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.50)",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
             }}
@@ -92,17 +93,18 @@ export default function ActiveAgentDisplay({ agentState }: ActiveAgentDisplayPro
           alignItems: "center",
           gap: 4,
           padding: "2px 8px",
-          border: `1px solid ${color}33`,
-          background: `${color}11`,
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 100,
+          background: "rgba(255,255,255,0.07)",
         }}
       >
-        <span style={{ fontSize: 8, color }}>{EMOTION_ICONS[emotion] || "●"}</span>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.50)" }}>{EMOTION_ICONS[emotion] || "●"}</span>
         <span
           style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 8,
-            color: "rgba(255,255,255,0.5)",
-            letterSpacing: "0.08em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 11,
+            color: "rgba(255,255,255,0.55)",
+            letterSpacing: "0.04em",
             textTransform: "uppercase",
           }}
         >

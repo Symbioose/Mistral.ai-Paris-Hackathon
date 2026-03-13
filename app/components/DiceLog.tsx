@@ -12,7 +12,7 @@ export default function DiceLog({ rolls }: DiceLogProps) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5A5A5A", fontWeight: 700 }}>
+        <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.50)", fontWeight: 500 }}>
           Journal des Des
         </span>
         <span style={{ fontSize: 12 }}>d20</span>
@@ -20,7 +20,7 @@ export default function DiceLog({ rolls }: DiceLogProps) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
         {recent.length === 0 ? (
-          <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#C4C0B5", textAlign: "center", padding: "16px 0" }}>
+          <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "rgba(255,255,255,0.30)", textAlign: "center", padding: "16px 0" }}>
             — aucun lancer —
           </p>
         ) : (
@@ -38,9 +38,9 @@ export default function DiceLog({ rolls }: DiceLogProps) {
                   alignItems:  "center",
                   gap:         10,
                   padding:     "8px 10px",
-                  background:  isSuccess ? "#EBF5EC" : "#F5EBEB",
-                  border:      `2px solid ${isSuccess ? "#2D7A3A" : "#CC2A2A"}`,
-                  boxShadow:   `2px 2px 0 ${isSuccess ? "#2D7A3A" : "#CC2A2A"}`,
+                  background:  isSuccess ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+                  border:      `1px solid ${isSuccess ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+                  borderRadius: 8,
                 }}
               >
                 {/* Die */}
@@ -49,40 +49,39 @@ export default function DiceLog({ rolls }: DiceLogProps) {
                   style={{
                     width:        40,
                     height:       40,
-                    background:   isSuccess ? "#2D7A3A" : "#CC2A2A",
+                    background:   isSuccess ? "#10B981" : "#EF4444",
                     display:      "flex",
                     alignItems:   "center",
                     justifyContent: "center",
                     flexShrink:   0,
-                    border:       "2px solid #1A1A1A",
-                    boxShadow:    "2px 2px 0 #1A1A1A",
+                    borderRadius: 8,
                   }}
                 >
-                  <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 17, fontWeight: 700, color: "#FAFAF7" }}>
+                  <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 17, fontWeight: 700, color: "#FAFAF7" }}>
                     {roll.roll}
                   </span>
                 </div>
 
                 {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#1A1A1A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>
+                  <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "rgba(255,255,255,0.90)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>
                     {roll.action}
                   </p>
                   {roll.skillName && (
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#1A1A1A", marginTop: 3, opacity: 0.8 }}>
+                    <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "rgba(255,255,255,0.70)", marginTop: 3 }}>
                       Procedure: {roll.skillName} {roll.skillId ? `(${roll.skillId})` : ""}
                     </p>
                   )}
                   {roll.skillEvidence && (
-                    <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 8, color: "rgba(255,255,255,0.50)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       Preuve doc: {roll.skillEvidence}
                     </p>
                   )}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#5A5A5A" }}>
+                    <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "rgba(255,255,255,0.50)" }}>
                       seuil {roll.needed}+
                     </span>
-                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, fontWeight: 700, color: isSuccess ? "#2D7A3A" : "#CC2A2A", letterSpacing: "0.1em" }}>
+                    <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, fontWeight: 700, color: isSuccess ? "#10B981" : "#EF4444", letterSpacing: "0.1em" }}>
                       {isCrit ? "CRITIQUE!" : isFumble ? "FUMBLE!" : isSuccess ? "SUCCES" : "ECHEC"}
                     </span>
                   </div>
