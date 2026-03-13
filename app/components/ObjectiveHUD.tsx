@@ -3,11 +3,11 @@
 import { Scenario } from "@/app/lib/types";
 
 function scoreColor(score: number): string {
-  if (score < 30) return "#CC2A2A";
-  if (score < 50) return "#D9754A";
-  if (score < 70) return "#D9A84A";
-  if (score < 85) return "#7AB648";
-  return "#2D9A48";
+  if (score < 30) return "#EF4444";
+  if (score < 50) return "#F97316";
+  if (score < 70) return "#F59E0B";
+  if (score < 85) return "#10B981";
+  return "#34D399";
 }
 
 function scoreLabel(score: number): string {
@@ -39,8 +39,10 @@ export default function ObjectiveHUD({
         position: "relative",
         zIndex: 21,
         margin: "8px 24px 0",
-        border: "1px solid rgba(74,144,217,0.18)",
-        background: "rgba(0,0,0,0.45)",
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 10,
+        background: "rgba(31,35,48,0.6)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
         backdropFilter: "blur(4px)",
       }}
     >
@@ -64,10 +66,10 @@ export default function ObjectiveHUD({
         >
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 7,
-              color: "#5A5A5A",
-              letterSpacing: "0.18em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.50)",
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
           >
@@ -75,9 +77,9 @@ export default function ObjectiveHUD({
           </span>
           <span
             style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 20,
-              color: "#4A90D9",
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 22,
+              color: "#F59E0B",
               lineHeight: 1,
             }}
           >
@@ -86,7 +88,7 @@ export default function ObjectiveHUD({
         </div>
 
         {/* Score bar */}
-        <div style={{ flex: 1, position: "relative", height: 5, background: "rgba(255,255,255,0.07)" }}>
+        <div style={{ flex: 1, position: "relative", height: 5, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
           <div
             style={{
               position: "absolute",
@@ -111,8 +113,8 @@ export default function ObjectiveHUD({
         >
           <span
             style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 22,
+              fontFamily: "var(--corp-font-heading)",
+              fontSize: 24,
               color,
               lineHeight: 1,
               transition: "color 0.7s ease",
@@ -122,9 +124,9 @@ export default function ObjectiveHUD({
           </span>
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 7,
-              color: "#5A5A5A",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 10,
+              color: "rgba(255,255,255,0.50)",
               letterSpacing: "0.08em",
             }}
           >
@@ -147,9 +149,9 @@ export default function ObjectiveHUD({
         >
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
-              color: "#4A90D9",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              color: "#F59E0B",
               flexShrink: 0,
               marginTop: 1,
               letterSpacing: "0.05em",
@@ -159,9 +161,9 @@ export default function ObjectiveHUD({
           </span>
           <p
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 9,
-              color: "rgba(243,240,230,0.72)",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 13,
+              color: "rgba(255,255,255,0.65)",
               lineHeight: 1.55,
               margin: 0,
             }}

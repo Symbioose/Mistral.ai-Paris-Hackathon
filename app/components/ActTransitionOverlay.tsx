@@ -31,7 +31,7 @@ export default function ActTransitionOverlay({
         position: "fixed",
         inset: 0,
         zIndex: 150,
-        background: "#000",
+        background: "rgba(17,19,24,0.97)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -40,25 +40,15 @@ export default function ActTransitionOverlay({
         pointerEvents: "none",
       }}
     >
-      {/* Subtle grid lines */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.035,
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.9) 48px, rgba(255,255,255,0.9) 49px), repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.9) 48px, rgba(255,255,255,0.9) 49px)",
-        }}
-      />
 
       {/* Completed act — success state */}
-      <div style={{ textAlign: "center", marginBottom: 40 }}>
+      <div style={{ textAlign: "center", marginBottom: 48 }}>
         <div
           style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 10,
-            color: "#2D9A48",
-            letterSpacing: "0.35em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 14,
+            color: "#10B981",
+            letterSpacing: "0.15em",
             textTransform: "uppercase",
             marginBottom: 14,
           }}
@@ -67,20 +57,19 @@ export default function ActTransitionOverlay({
         </div>
         <div
           style={{
-            fontFamily: "'VT323', monospace",
-            fontSize: 58,
-            color: "#F3F0E6",
-            letterSpacing: "0.06em",
-            lineHeight: 1,
+            fontFamily: "var(--corp-font-heading)",
+            fontSize: 48,
+            color: "#FFFFFF",
+            lineHeight: 1.1,
           }}
         >
           {completedAct.title.toUpperCase()}
         </div>
         <div
           style={{
-            width: 64,
+            width: 80,
             height: 2,
-            background: "#2D9A48",
+            background: "#10B981",
             margin: "14px auto 0",
           }}
         />
@@ -89,46 +78,47 @@ export default function ActTransitionOverlay({
       {/* Chevrons */}
       {nextAct && (
         <>
-          <div
-            style={{
-              fontFamily: "'VT323', monospace",
-              fontSize: 24,
-              color: "rgba(255,255,255,0.12)",
-              marginBottom: 32,
-              letterSpacing: "0.25em",
-            }}
-          >
-            ▼ &nbsp; ▼ &nbsp; ▼
-          </div>
-
-          {/* Next act — brief */}
+          {/* Next act card */}
           <div
             style={{
               textAlign: "center",
-              border: "1px solid rgba(74,144,217,0.28)",
-              padding: "18px 36px",
-              background: "rgba(74,144,217,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              padding: "24px 36px",
+              background: "rgba(31,35,48,0.6)",
+              borderRadius: 16,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
               maxWidth: 560,
             }}
           >
             <div
               style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 8,
-                color: "#4A90D9",
-                letterSpacing: "0.3em",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 11,
+                color: "#F59E0B",
+                letterSpacing: "0.15em",
                 textTransform: "uppercase",
-                marginBottom: 10,
+                marginBottom: 8,
               }}
             >
-              ▶ &nbsp; ACTE {nextAct.act_number} : {nextAct.title.toUpperCase()}
+              ACTE {nextAct.act_number}
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--corp-font-heading)",
+                fontSize: 28,
+                color: "#FFFFFF",
+                marginBottom: 12,
+                fontWeight: 400,
+              }}
+            >
+              {nextAct.title}
             </div>
             <p
               style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 10,
-                color: "rgba(243,240,230,0.6)",
-                lineHeight: 1.75,
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 14,
+                color: "rgba(255,255,255,0.65)",
+                lineHeight: 1.6,
                 margin: 0,
               }}
             >

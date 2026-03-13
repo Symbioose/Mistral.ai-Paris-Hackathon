@@ -69,30 +69,34 @@ export default function DialogueBox({ text, isLoading, speakerName = "Maître du
     <div className="relative">
       <div
         style={{
-          background:   "#1A1A1A",
-          borderTop:    "4px solid #FF5B22",
-          padding:      "16px 24px 20px",
+          background: "rgba(31,35,48,0.7)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          backdropFilter: "blur(8px)",
+          borderLeft: "3px solid #3B82F6",
+          borderRadius: 12,
+          margin: "0 16px 12px",
+          padding: "16px 24px",
         }}
       >
         {/* Speaker label */}
         <div className="flex items-center gap-2 mb-3">
           <div
             style={{
-              width:      8,
-              height:     8,
-              background: isNpc ? "#FF5B22" : "#1A1A1A",
-              border:     isNpc ? "2px solid #FF5B22" : "2px solid #F3F0E6",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: isNpc ? "#3B82F6" : "rgba(255,255,255,0.3)",
               flexShrink: 0,
             }}
           />
           <span
             style={{
-              fontFamily:    "'Space Mono', monospace",
-              fontSize:      10,
-              letterSpacing: "0.2em",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color:         isNpc ? "#FF5B22" : "#F3F0E6",
-              fontWeight:    700,
+              color: isNpc ? "#FFFFFF" : "rgba(255,255,255,0.7)",
+              fontWeight: 600,
             }}
           >
             {speakerName}
@@ -100,12 +104,13 @@ export default function DialogueBox({ text, isLoading, speakerName = "Maître du
           {isNpc && (
             <span
               style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize:   9,
-                color:      "#FF5B22",
-                border:     "1px solid #FF5B22",
-                padding:    "1px 4px",
-                letterSpacing: "0.1em",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 10,
+                color: "#3B82F6",
+                border: "1px solid rgba(59,130,246,0.3)",
+                padding: "2px 8px",
+                borderRadius: 100,
+                letterSpacing: "0.06em",
               }}
             >
               PNJ
@@ -124,7 +129,7 @@ export default function DialogueBox({ text, isLoading, speakerName = "Maître du
                   style={{
                     width:            3,
                     height:           16,
-                    background:       "#FF5B22",
+                    background:       "#3B82F6",
                     animationDelay:   `${i * 80}ms`,
                     transformOrigin:  "bottom",
                   }}
@@ -132,32 +137,29 @@ export default function DialogueBox({ text, isLoading, speakerName = "Maître du
               ))}
               <span
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize:   11,
-                  color:      "#5A5A5A",
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.50)",
                   marginLeft: 8,
-                  letterSpacing: "0.1em",
                 }}
               >
-                TRANSMISSION EN COURS...
+                Analyse en cours...
               </span>
             </div>
           ) : (
             <p
-              className="animate-flicker"
               style={{
-                fontFamily:  "'VT323', monospace",
-                fontSize:    22,
-                lineHeight:  1.4,
-                color:       "#F3F0E6",
-                letterSpacing: "0.02em",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 18,
+                lineHeight: 1.65,
+                color: "rgba(255,255,255,0.95)",
               }}
             >
               {displayText}
               {isTyping && (
                 <span
                   className="animate-blink"
-                  style={{ display: "inline-block", width: 10, height: 18, background: "#FF5B22", marginLeft: 2, verticalAlign: "middle" }}
+                  style={{ display: "inline-block", width: 2, height: "1em", background: "#3B82F6", marginLeft: 2, verticalAlign: "text-bottom" }}
                 />
               )}
             </p>

@@ -899,7 +899,7 @@ export default function SkillsReportDashboard({
             fontSize: 12,
             color: "var(--corp-text-muted)",
           }}>
-            Genere par YouGotIt · Powered by Mistral AI
+            Genere par YouGotIt
           </p>
           <p style={{
             fontFamily: "var(--corp-font-body)",

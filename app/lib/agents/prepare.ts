@@ -80,7 +80,7 @@ JSON strict, aucun texte hors JSON:
     responseFormat: { type: "json_object" },
     temperature: 0.3,
     maxTokens: 3000,
-    timeoutMs: 30000,
+    timeoutMs: 90000,
   });
 
   const raw = String(message.content || "").trim();
@@ -251,7 +251,7 @@ JSON strict:
     responseFormat: { type: "json_object" },
     temperature: 0.4,
     maxTokens: 2500,
-    timeoutMs: 30000,
+    timeoutMs: 90000,
   });
 
   const raw = String(message.content || "").trim();
@@ -460,7 +460,7 @@ export async function prepareGamePlan(
     const t0 = Date.now();
 
     // Step 1: Generate Q&A pairs
-    status("Analyse du document avec Mistral AI...");
+    status("Analyse du document en cours...");
     console.log("[prepare] Step 1: Generating Q&A pairs...");
     const t1 = Date.now();
     const qaPairs = await generateQAPairs(documentText);

@@ -28,17 +28,17 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
   }, [hp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
-  const barColor = pct > 60 ? "#2D7A3A" : pct > 30 ? "#CC7A00" : "#CC2A2A";
-  const textColor = pct > 60 ? "#2D7A3A" : pct > 30 ? "#CC7A00" : "#CC2A2A";
+  const barColor = pct > 60 ? "#10B981" : pct > 30 ? "#F59E0B" : "#EF4444";
+  const textColor = pct > 60 ? "#10B981" : pct > 30 ? "#F59E0B" : "#EF4444";
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5A5A5A", fontWeight: 700 }}>
+        <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.50)", fontWeight: 500 }}>
           Points de Vie
         </span>
         <span
-          style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: textColor }}
+          style={{ fontFamily: "var(--corp-font-heading)", fontSize: 16, fontWeight: 700, color: textColor }}
           className={pct <= 30 ? "animate-blink" : ""}
         >
           {displayHp}/{maxHp}
@@ -46,7 +46,7 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
       </div>
 
       {/* Track */}
-      <div style={{ height: 20, background: "#E8E4D9", border: "2px solid #1A1A1A", position: "relative", overflow: "hidden" }}>
+      <div style={{ height: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, position: "relative", overflow: "hidden" }}>
         {/* Bar */}
         <div
           style={{
@@ -54,21 +54,13 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
             width:      `${pct}%`,
             background: barColor,
             transition: "width 0.5s ease-out, background 0.3s",
-          }}
-        />
-        {/* Grid overlay */}
-        <div
-          style={{
-            position:        "absolute",
-            inset:           0,
-            backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(0,0,0,0.08) 9px, rgba(0,0,0,0.08) 10px)",
-            pointerEvents:   "none",
+            borderRadius: 6,
           }}
         />
       </div>
 
       {pct <= 30 && (
-        <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "#CC2A2A", letterSpacing: "0.15em", marginTop: 4, fontWeight: 700 }}>
+        <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 9, color: "#EF4444", letterSpacing: "0.15em", marginTop: 4, fontWeight: 700 }}>
           ÉTAT CRITIQUE
         </p>
       )}

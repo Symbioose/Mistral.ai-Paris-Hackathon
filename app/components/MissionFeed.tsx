@@ -13,15 +13,15 @@ const FEED_CONFIG: Record<
   FeedItemType,
   { color: string; label: string }
 > = {
-  agent_switch:    { color: "#4A90D9", label: "SWITCH" },
-  knowledge_check: { color: "#7AB648", label: "CHECK" },
-  score_change:    { color: "#7AB648", label: "SCORE" },
-  act_transition:  { color: "#D94A8C", label: "ACTE" },
-  event_triggered: { color: "#D9A84A", label: "EVENT" },
-  eval_decision:   { color: "#9B59B6", label: "EVAL" },
-  emotion_change:  { color: "#4AD9A8", label: "EMOTION" },
-  learning_mode:   { color: "#7AB648", label: "LEARN" },
-  agent_note:      { color: "#E67E22", label: "NOTE" },
+  agent_switch:    { color: "#2563EB", label: "SWITCH" },
+  knowledge_check: { color: "#059669", label: "CHECK" },
+  score_change:    { color: "#059669", label: "SCORE" },
+  act_transition:  { color: "#EC4899", label: "ACTE" },
+  event_triggered: { color: "#D97706", label: "EVENT" },
+  eval_decision:   { color: "#6366F1", label: "EVAL" },
+  emotion_change:  { color: "#059669", label: "EMOTION" },
+  learning_mode:   { color: "#059669", label: "LEARN" },
+  agent_note:      { color: "#EA580C", label: "NOTE" },
 };
 
 function formatRelativeTime(ts: number): string {
@@ -79,16 +79,16 @@ function FeedItemRow({ item }: { item: MissionFeedItem }) {
           marginTop: 3,
           flexShrink: 0,
           background: color,
-          borderRadius: 1,
+          borderRadius: "50%",
         }}
       />
 
       <span
         style={{
-          fontFamily: "'Space Mono', monospace",
-          fontSize: 7,
-          fontWeight: 700,
-          letterSpacing: "0.08em",
+          fontFamily: "var(--corp-font-body)",
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
           color,
           textTransform: "uppercase",
           minWidth: 40,
@@ -107,23 +107,23 @@ function FeedItemRow({ item }: { item: MissionFeedItem }) {
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 15 }}
               style={{
-                fontFamily: "'VT323', monospace",
+                fontFamily: "var(--corp-font-heading)",
                 fontSize: 16,
                 lineHeight: 1,
-                color: (item.scoreDelta || 0) >= 0 ? "#7AB648" : "#CC2A2A",
+                color: (item.scoreDelta || 0) >= 0 ? "#059669" : "#DC2626",
               }}
             >
               {(item.scoreDelta || 0) > 0 ? "+" : ""}{item.scoreDelta}
             </motion.span>
-            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 7, color: "rgba(255,255,255,0.35)" }}>
+            <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
               {"\u2192"} {item.newScore}/100
             </span>
           </div>
         ) : (
           <span
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 8,
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
               color: "rgba(255,255,255,0.55)",
               lineHeight: "1.4",
               wordBreak: "break-word",
@@ -136,9 +136,9 @@ function FeedItemRow({ item }: { item: MissionFeedItem }) {
 
       <span
         style={{
-          fontFamily: "'Space Mono', monospace",
-          fontSize: 6,
-          color: "#3A3A3A",
+          fontFamily: "var(--corp-font-body)",
+          fontSize: 10,
+          color: "rgba(255,255,255,0.2)",
           flexShrink: 0,
           marginTop: 1,
         }}
@@ -186,18 +186,18 @@ export default function MissionFeed({ items, isActive }: MissionFeedProps) {
             width: 4,
             height: 4,
             borderRadius: "50%",
-            background: isActive ? "#4A90D9" : "#3A3A3A",
+            background: isActive ? "#2563EB" : "rgba(255,255,255,0.2)",
             animation: isActive ? "blink 1.4s infinite" : "none",
           }}
         />
         <span
           style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 7,
-            fontWeight: 700,
-            letterSpacing: "0.15em",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: "#3A3A3A",
+            color: "rgba(255,255,255,0.35)",
           }}
         >
           ORCHESTRATION LOG
@@ -205,9 +205,9 @@ export default function MissionFeed({ items, isActive }: MissionFeedProps) {
         <span
           style={{
             marginLeft: "auto",
-            fontFamily: "'Space Mono', monospace",
-            fontSize: 6,
-            color: "#2A2A2A",
+            fontFamily: "var(--corp-font-body)",
+            fontSize: 10,
+            color: "rgba(255,255,255,0.15)",
           }}
         >
           {items.length}
@@ -230,9 +230,9 @@ export default function MissionFeed({ items, isActive }: MissionFeedProps) {
         {visible.length === 0 ? (
           <div
             style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 7,
-              color: "#2A2A2A",
+              fontFamily: "var(--corp-font-body)",
+              fontSize: 12,
+              color: "rgba(255,255,255,0.3)",
               textTransform: "uppercase",
               letterSpacing: "0.15em",
               animation: "blink 1.4s infinite",

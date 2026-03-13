@@ -1320,7 +1320,7 @@ export default function Home() {
           padding: "20px 0 32px",
           borderTop: "1px solid var(--corp-border-light)",
         }}>
-          {["Powered by Mistral AI", "ElevenLabs Voice AI", "Enterprise-grade"].map((text, i) => (
+          {["Powered by AI", "ElevenLabs Voice AI", "Enterprise-grade"].map((text, i) => (
             <span key={text} style={{ display: "flex", alignItems: "center", gap: 24 }}>
               {i > 0 && <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--corp-border)", display: "inline-block" }} />}
               <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-muted)", letterSpacing: "0.02em" }}>
@@ -1726,7 +1726,7 @@ export default function Home() {
               >
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                   <circle cx="16" cy="16" r="16" fill="#ECFDF5"/>
-                  <path d="M12 16L15 19L21 13" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 16L15 19L21 13" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
                 <div>
                   <p style={{
@@ -1821,60 +1821,35 @@ export default function Home() {
   const isMultiAgent = !!multiAgentState;
   const isStalledTurn = gameState.dialogue.trim() === "..." || gameState.dialogue.toLowerCase().includes("connexion perdue");
 
-  // Dynamic emotion background for multi-agent mode
-  const EMOTION_BG_COLOR: Record<string, string> = {
-    calm:       "rgba(74,144,217,0.05)",
-    stressed:   "rgba(217,168,74,0.07)",
-    angry:      "rgba(204,42,42,0.09)",
-    panicked:   "rgba(204,42,42,0.14)",
-    suspicious: "rgba(155,89,182,0.08)",
-  };
-  const activeEmotion = activeAgentState?.emotion || "calm";
-  const emotionBgColor = isMultiAgent
-    ? (EMOTION_BG_COLOR[activeEmotion] ?? EMOTION_BG_COLOR.calm)
-    : "rgba(255,91,34,0.04)";
 
   return (
-    <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden", background: "#F3F0E6" }}>
+    <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden", background: "#111318" }}>
 
       {/* ====== ZONE IMMERSIVE (65%) ====== */}
-      <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", background: "#1A1A1A" }}>
+      <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", background: "#111318" }}>
 
         {/* Background */}
         <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, background: isMultiAgent
-            ? "linear-gradient(160deg, #0a0a0f 0%, #0f0f1a 40%, #0a0a0f 100%)"
-            : "linear-gradient(160deg, #0F0F0F 0%, #1A1A1A 40%, #0A0D0A 100%)" }} />
+          <div style={{ position: "absolute", inset: 0, background: "#111318" }} />
           <div style={{
-            position: "absolute",
-            inset: 0,
-            background: `radial-gradient(ellipse at 40% 60%, ${emotionBgColor} 0%, transparent 65%)`,
-            transition: "background 0.8s ease",
+            position: "absolute", inset: 0,
+            background: "radial-gradient(ellipse at 40% 60%, rgba(59,130,246,0.05), rgba(245,158,11,0.03) 50%, transparent 75%)",
           }} />
-          {!isMultiAgent && (
-            <div style={{ position: "absolute", inset: 0, opacity: 0.035, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(255,240,230,0.8) 120px, rgba(255,240,230,0.8) 122px)" }} />
-          )}
-          <div className="animate-scanline" style={{
-            position: "absolute", left: 0, right: 0, top: 0, height: 3,
-            background: isMultiAgent ? emotionBgColor.replace(/[\d.]+\)$/, "0.18)") : "rgba(255,91,34,0.06)",
-            transition: "background 0.8s ease",
-          }} />
-          <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.7)" }} />
         </div>
 
 
         {/* ── TOP BAR ── */}
-        <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: isMultiAgent ? "2px solid rgba(74,144,217,0.15)" : "2px solid rgba(255,91,34,0.15)" }}>
+        <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid rgba(255,255,255,0.1)", background: "rgba(31,35,48,0.8)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 6, height: 32, background: isMultiAgent ? "#4A90D9" : "#FF5B22" }} />
+            <div style={{ width: 6, height: 32, background: "#3B82F6" }} />
             <div>
-              <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 15, fontWeight: 700, color: "#F3F0E6", letterSpacing: "0.06em" }}>
+              <h1 style={{ fontFamily: "var(--corp-font-body)", fontSize: 15, fontWeight: 600, color: "#FFFFFF", letterSpacing: "0.04em" }}>
                 {isMultiAgent ? multiAgentState.scenario.title.toUpperCase() : "SIMULATION DE FORMATION"}
               </h1>
-              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase" }}>
+              <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, color: "rgba(255,255,255,0.50)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                 {isMultiAgent
-                  ? `Acte ${multiAgentState.currentAct} · ${multiAgentState.agents.length} agents · Mistral AI`
-                  : "Simulation adaptative · Mistral AI"}
+                  ? `Acte ${multiAgentState.currentAct} · ${multiAgentState.agents.length} agents`
+                  : "Simulation adaptative"}
               </p>
             </div>
           </div>
@@ -1883,15 +1858,16 @@ export default function Home() {
               <button
                 onClick={handleFinishSimulation}
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: "0.15em",
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
                   textTransform: "uppercase",
                   background: "transparent",
-                  color: isMultiAgent ? "#4A90D9" : "#FF5B22",
-                  border: `1px solid ${isMultiAgent ? "#4A90D9" : "#FF5B22"}`,
+                  color: "#3B82F6",
+                  border: "1px solid rgba(255,255,255,0.15)",
                   padding: "6px 10px",
+                  borderRadius: 6,
                   cursor: "pointer",
                 }}
               >
@@ -1903,15 +1879,16 @@ export default function Home() {
                 onClick={handleResumeCurrentTurn}
                 disabled={isLoading}
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: "0.15em",
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
                   textTransform: "uppercase",
-                  background: isStalledTurn ? (isMultiAgent ? "rgba(74,144,217,0.14)" : "rgba(255,91,34,0.14)") : "transparent",
-                  color: isMultiAgent ? "#4A90D9" : "#FF5B22",
-                  border: `1px solid ${isMultiAgent ? "#4A90D9" : "#FF5B22"}`,
+                  background: isStalledTurn ? "rgba(59,130,246,0.1)" : "transparent",
+                  color: "#3B82F6",
+                  border: "1px solid rgba(255,255,255,0.15)",
                   padding: "6px 10px",
+                  borderRadius: 6,
                   cursor: isLoading ? "not-allowed" : "pointer",
                   opacity: isLoading ? 0.55 : 1,
                 }}
@@ -1922,8 +1899,8 @@ export default function Home() {
             )}
             {gameState.isGameStarted && (
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 6, height: 6, background: isMultiAgent ? "#4A90D9" : "#FF5B22" }} className="animate-blink" />
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: isMultiAgent ? "#4A90D9" : "#FF5B22", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+                <div style={{ width: 6, height: 6, background: "#3B82F6", borderRadius: "50%" }} className="animate-blink" />
+                <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 11, color: "#3B82F6", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                   Session Active
                 </span>
               </div>
@@ -1940,9 +1917,10 @@ export default function Home() {
               zIndex: 22,
               padding: "10px 16px",
               margin: "10px 24px 0",
-              border: "2px solid rgba(122,182,72,0.5)",
-              background: "rgba(122,182,72,0.08)",
-              boxShadow: "0 0 24px rgba(122,182,72,0.2), inset 0 0 30px rgba(122,182,72,0.05)",
+              border: "1px solid rgba(16,185,129,0.3)",
+              borderLeft: "3px solid #10B981",
+              background: "rgba(16,185,129,0.08)",
+              borderRadius: 8,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1952,34 +1930,35 @@ export default function Home() {
                   alignItems: "center",
                   gap: 6,
                   padding: "4px 10px",
-                  background: "rgba(122,182,72,0.2)",
-                  border: "1px solid rgba(122,182,72,0.5)",
+                  background: "rgba(16,185,129,0.15)",
+                  border: "1px solid rgba(16,185,129,0.3)",
+                  borderRadius: 100,
                 }}
               >
                 <span
                   className="animate-blink"
-                  style={{ width: 7, height: 7, borderRadius: "50%", background: "#7AB648", boxShadow: "0 0 10px #7AB648" }}
+                  style={{ width: 7, height: 7, borderRadius: "50%", background: "#10B981" }}
                 />
                 <span
                   style={{
-                    fontFamily: "'Space Mono', monospace",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.15em",
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    color: "#9CD56A",
+                    color: "#10B981",
                   }}
                 >
                   Learning Mode ON
                 </span>
               </div>
-              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.72)", lineHeight: 1.5, flex: 1 }}>
+              <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.5, flex: 1 }}>
                 {learningModeState.message}
               </p>
               <span style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 8,
-                color: "rgba(122,182,72,0.6)",
+                fontFamily: "var(--corp-font-body)",
+                fontSize: 11,
+                color: "rgba(16,185,129,0.5)",
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 whiteSpace: "nowrap",
@@ -2042,34 +2021,35 @@ export default function Home() {
                       style={{
                         marginBottom: 10,
                         padding: "8px 12px",
-                        border: `1px solid ${isCurrent ? "rgba(74,144,217,0.4)" : isDone ? "rgba(122,182,72,0.25)" : "rgba(255,255,255,0.06)"}`,
-                        background: isCurrent ? "rgba(74,144,217,0.06)" : isDone ? "rgba(122,182,72,0.04)" : "rgba(255,255,255,0.02)",
+                        border: `1px solid rgba(255,255,255,0.08)`,
+                        borderLeft: isCurrent ? "3px solid #3B82F6" : isDone ? "3px solid #10B981" : "3px solid transparent",
+                        borderRadius: 8,
+                        background: "rgba(31,35,48,0.7)",
                         transition: "all 0.3s ease",
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                         <span style={{
                           width: 6, height: 6, borderRadius: "50%",
-                          background: isDone ? "#7AB648" : isCurrent ? "#4A90D9" : "#3A3A3A",
-                          boxShadow: isCurrent ? "0 0 8px #4A90D9" : isDone ? "0 0 6px #7AB648" : "none",
+                          background: isDone ? "#10B981" : isCurrent ? "#3B82F6" : "rgba(255,255,255,0.2)",
                         }} />
                         <span style={{
-                          fontFamily: "'Space Mono', monospace",
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: "0.12em",
+                          fontFamily: "var(--corp-font-body)",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          letterSpacing: "0.06em",
                           textTransform: "uppercase",
-                          color: isDone ? "#7AB648" : isCurrent ? "#4A90D9" : "#5A5A5A",
+                          color: isDone ? "#10B981" : isCurrent ? "#3B82F6" : "rgba(255,255,255,0.4)",
                         }}>
                           {catAgent?.name || `Agent ${catIdx + 1}`} — {cat.name}
                         </span>
                         {isDone && (
-                          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#7AB648", marginLeft: "auto" }}>
+                          <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "#10B981", marginLeft: "auto" }}>
                             COMPLETE
                           </span>
                         )}
                         {isCurrent && (
-                          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 8, color: "#4A90D9", marginLeft: "auto" }} className="animate-blink">
+                          <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 10, color: "#3B82F6", marginLeft: "auto" }} className="animate-blink">
                             EN COURS
                           </span>
                         )}
@@ -2084,20 +2064,20 @@ export default function Home() {
 
                           let bg = "rgba(255,255,255,0.05)";
                           let borderColor = "rgba(255,255,255,0.08)";
-                          let textColor = "#5A5A5A";
+                          let textColor = "rgba(255,255,255,0.4)";
 
                           if (isCompleted) {
-                            bg = "rgba(122,182,72,0.15)";
-                            borderColor = "rgba(122,182,72,0.4)";
-                            textColor = "#9CD56A";
+                            bg = "rgba(16,185,129,0.15)";
+                            borderColor = "rgba(16,185,129,0.4)";
+                            textColor = "#10B981";
                           } else if (isFailed) {
-                            bg = "rgba(204,42,42,0.15)";
-                            borderColor = "rgba(204,42,42,0.4)";
-                            textColor = "#CC2A2A";
+                            bg = "rgba(239,68,68,0.15)";
+                            borderColor = "rgba(239,68,68,0.4)";
+                            textColor = "#EF4444";
                           } else if (isActive) {
-                            bg = "rgba(74,144,217,0.12)";
-                            borderColor = "rgba(74,144,217,0.5)";
-                            textColor = "#4A90D9";
+                            bg = "rgba(59,130,246,0.15)";
+                            borderColor = "rgba(59,130,246,0.5)";
+                            textColor = "#3B82F6";
                           }
 
                           return (
@@ -2107,10 +2087,10 @@ export default function Home() {
                                 padding: "3px 8px",
                                 border: `1px solid ${borderColor}`,
                                 background: bg,
-                                fontFamily: "'Space Mono', monospace",
-                                fontSize: 8,
+                                fontFamily: "var(--corp-font-body)",
+                                fontSize: 10,
                                 color: textColor,
-                                letterSpacing: "0.05em",
+                                borderRadius: 4,
                                 transition: "all 0.3s ease",
                               }}
                               title={qa?.question || ""}
@@ -2131,48 +2111,47 @@ export default function Home() {
           {/* START SCREEN (legacy mode only) */}
           {!isMultiAgent && !gameState.isGameStarted && !isLoading && (
             <div className="animate-fade-in" style={{ textAlign: "center", padding: 32 }}>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 64, color: "#FF5B22", lineHeight: 1, marginBottom: 8 }}>
+              <div style={{ fontFamily: "var(--corp-font-heading)", fontSize: 48, color: "#F59E0B", lineHeight: 1, marginBottom: 8 }}>
                 BRIEFING
               </div>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 32 }}>
+              <div style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "rgba(255,255,255,0.50)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 32 }}>
                 Simulation de crise — Session live
               </div>
 
               <div
                 style={{
-                  border:    "2px solid rgba(255,91,34,0.3)",
+                  border:    "1px solid rgba(245,158,11,0.2)",
+                  borderRadius: 12,
                   padding:   "20px 24px",
                   marginBottom: 32,
                   maxWidth:  360,
-                  background: "rgba(255,91,34,0.04)",
+                  background: "rgba(245,158,11,0.04)",
                 }}
               >
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#C4C0B5", lineHeight: 1.7 }}>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "rgba(255,255,255,0.7)", lineHeight: 1.7 }}>
                   Situation initiale chargee.<br />
                   Informations incomplètes, pression elevee.<br />
                   Votre role: prendre les bonnes decisions.<br />
-                  <span style={{ color: "#FF5B22" }}>Execution immediate.</span>
+                  <span style={{ color: "#F59E0B" }}>Execution immediate.</span>
                 </p>
               </div>
 
               <button
                 onClick={startGame}
                 style={{
-                  fontFamily:    "'Space Mono', monospace",
-                  fontSize:      12,
-                  fontWeight:    700,
-                  letterSpacing: "0.2em",
+                  fontFamily:    "var(--corp-font-body)",
+                  fontSize:      15,
+                  fontWeight:    600,
+                  letterSpacing: "0.04em",
                   textTransform: "uppercase",
                   padding:       "14px 32px",
-                  background:    "#FF5B22",
-                  color:         "#F3F0E6",
-                  border:        "2px solid #FF5B22",
-                  boxShadow:     "4px 4px 0 #CC4919",
+                  background:    "#3B82F6",
+                  color:         "#FFFFFF",
+                  border:        "none",
+                  borderRadius:  12,
                   cursor:        "pointer",
-                  transition:    "all 0.1s",
+                  boxShadow:     "0 4px 16px rgba(59,130,246,0.35)",
                 }}
-                onMouseEnter={(e) => { (e.target as HTMLButtonElement).style.boxShadow = "2px 2px 0 #CC4919"; (e.target as HTMLButtonElement).style.transform = "translate(2px,2px)"; }}
-                onMouseLeave={(e) => { (e.target as HTMLButtonElement).style.boxShadow = "4px 4px 0 #CC4919"; (e.target as HTMLButtonElement).style.transform = "translate(0,0)"; }}
               >
                 Entrer dans la simulation
               </button>
@@ -2187,11 +2166,11 @@ export default function Home() {
                   <div
                     key={i}
                     className="animate-soundwave"
-                    style={{ width: 5, height: "100%", background: isMultiAgent ? "#4A90D9" : "#FF5B22", animationDelay: `${i * 80}ms` }}
+                    style={{ width: 5, height: "100%", background: "#3B82F6", animationDelay: `${i * 80}ms` }}
                   />
                 ))}
               </div>
-              <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#5A5A5A", letterSpacing: "0.15em" }}>
+              <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em" }}>
                 {isMultiAgent ? "CONNEXION AUX AGENTS..." : "INITIALISATION DE LA SIMULATION ADAPTATIVE..."}
               </p>
             </div>
@@ -2203,31 +2182,31 @@ export default function Home() {
               className="animate-fade-in"
               style={{
                 position:  "absolute", inset: 0,
-                background: "rgba(0,0,0,0.88)",
+                background: "rgba(17,19,24,0.95)",
                 display:   "flex", alignItems: "center", justifyContent: "center",
                 zIndex:    30,
               }}
             >
               <div style={{ textAlign: "center", padding: 32 }}>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 80, color: "#CC2A2A", marginBottom: 8 }} className="animate-game-over">
+                <div style={{ fontFamily: "var(--corp-font-heading)", fontSize: 56, color: "#EF4444", marginBottom: 8 }}>
                   GAME OVER
                 </div>
-                <p style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#5A5A5A", marginBottom: 28 }}>
+                <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 28 }}>
                   {isMultiAgent ? "La simulation est terminée." : "Session interrompue. Reprenez une simulation."}
                 </p>
                 <button
                   onClick={handleRestartSimulation}
                   style={{
-                    fontFamily:    "'Space Mono', monospace",
-                    fontSize:      11,
-                    fontWeight:    700,
-                    letterSpacing: "0.15em",
+                    fontFamily:    "var(--corp-font-body)",
+                    fontSize:      13,
+                    fontWeight:    600,
+                    letterSpacing: "0.04em",
                     textTransform: "uppercase",
                     padding:       "12px 24px",
                     background:    "transparent",
-                    color:         "#CC2A2A",
-                    border:        "2px solid #CC2A2A",
-                    boxShadow:     "3px 3px 0 #CC2A2A",
+                    color:         "#EF4444",
+                    border:        "1px solid #EF4444",
+                    borderRadius:  8,
                     cursor:        "pointer",
                   }}
                 >
@@ -2259,8 +2238,8 @@ export default function Home() {
               display:       "flex",
               justifyContent:"center",
               padding:       "20px 24px",
-              background:    "#1A1A1A",
-              borderTop:     `2px solid ${isMultiAgent ? "rgba(74,144,217,0.15)" : "rgba(255,91,34,0.15)"}`,
+              background:    "#181B23",
+              borderTop:     "1px solid rgba(255,255,255,0.10)",
             }}
           >
             {hasMic ? (
@@ -2289,7 +2268,7 @@ export default function Home() {
       </div>
 
       {/* ====== SIDE PANEL (35%) ====== */}
-      <div style={{ width: "35%", minWidth: 300, maxWidth: 400, background: "#1A1A1A", borderLeft: `2px solid ${isMultiAgent ? "rgba(74,144,217,0.1)" : "rgba(255,91,34,0.1)"}`, overflowY: "auto" }}>
+      <div style={{ width: "35%", minWidth: 300, maxWidth: 400, background: "#181B23", borderLeft: "1px solid rgba(255,255,255,0.10)", overflowY: "auto" }}>
         {isMultiAgent && multiAgentState ? (
           <>
             <AgentPanel
@@ -2308,7 +2287,7 @@ export default function Home() {
               totalScore={multiAgentState.totalScore}
             />
             {/* Orchestration Log — bottom of right panel */}
-            <div style={{ position: "relative", height: 240, borderTop: "1px solid rgba(74,144,217,0.1)", flexShrink: 0 }}>
+            <div style={{ position: "relative", height: 240, borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
               <MissionFeed items={missionFeedItems} isActive={isLoading} />
             </div>
           </>
@@ -2316,7 +2295,7 @@ export default function Home() {
           <SidePanel
             gameState={gameState}
             modeLabel={"Simulation Formation"}
-            modeSubtitle={"Mistral Adaptive Engine"}
+            modeSubtitle={"Adaptive Engine"}
           />
         )}
       </div>

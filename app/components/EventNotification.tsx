@@ -13,11 +13,11 @@ interface EventNotificationProps {
 }
 
 const EVENT_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
-  crisis: { icon: "⚠", color: "#CC2A2A", label: "CRISE" },
-  new_character: { icon: "◉", color: "#4A90D9", label: "NOUVEAU PERSONNAGE" },
-  plot_twist: { icon: "⟳", color: "#D94A8C", label: "REBONDISSEMENT" },
-  chaos: { icon: "⚡", color: "#D9A84A", label: "CHAOS" },
-  learning: { icon: "✦", color: "#7AB648", label: "LEARNING MODE" },
+  crisis: { icon: "⚠", color: "#DC2626", label: "CRISE" },
+  new_character: { icon: "◉", color: "#2563EB", label: "NOUVEAU PERSONNAGE" },
+  plot_twist: { icon: "⟳", color: "#EC4899", label: "REBONDISSEMENT" },
+  chaos: { icon: "⚡", color: "#D97706", label: "CHAOS" },
+  learning: { icon: "✦", color: "#059669", label: "LEARNING MODE" },
 };
 
 const DISMISS_DELAY_MS = 4500;
@@ -69,13 +69,14 @@ export default function EventNotification({ events }: EventNotificationProps) {
           <div
             key={event.id}
             style={{
-              background: "rgba(8, 8, 14, 0.92)",
-              border: `1px solid ${config.color}55`,
+              background: "rgba(31,35,48,0.95)",
+              borderLeft: `3px solid ${config.color}`,
+              borderRadius: 12,
               padding: "10px 16px",
               display: "flex",
               alignItems: "flex-start",
               gap: 12,
-              boxShadow: `0 0 24px ${config.color}22, 0 2px 16px rgba(0,0,0,0.5)`,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
               backdropFilter: "blur(8px)",
               animation: "notification-slide-in 0.28s ease-out",
             }}
@@ -86,10 +87,10 @@ export default function EventNotification({ events }: EventNotificationProps) {
             <div style={{ minWidth: 0 }}>
               <p
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 8,
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 11,
                   color: config.color,
-                  letterSpacing: "0.18em",
+                  letterSpacing: "0.1em",
                   textTransform: "uppercase",
                   fontWeight: 700,
                   marginBottom: 3,
@@ -99,8 +100,8 @@ export default function EventNotification({ events }: EventNotificationProps) {
               </p>
               <p
                 style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 10,
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 13,
                   color: "rgba(255,255,255,0.75)",
                   lineHeight: 1.5,
                 }}
