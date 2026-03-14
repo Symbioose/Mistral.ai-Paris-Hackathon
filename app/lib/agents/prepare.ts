@@ -1,7 +1,7 @@
 import { Agent, GamePlan, QAPair, QACategory, Scenario } from "@/app/lib/types";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
+import { chatCompletion } from "@/app/lib/agents/openai-client";
 
-const MODEL = process.env.MISTRAL_ORCHESTRATION_MODEL || "mistral-large-latest";
+const MODEL_PREPARATION = "gpt-4.1-mini";
 
 // ---------------------------------------------------------------------------
 // JSON extraction helper
@@ -34,15 +34,15 @@ function extractJson<T>(raw: string): T | null {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Document → Q&A pairs
+// Step 1: Document -> Q&A pairs (100% grounded in the document)
 // ---------------------------------------------------------------------------
 
 async function generateQAPairs(documentText: string): Promise<QAPair[]> {
   const docLength = documentText.length;
   const targetCount = docLength < 2000 ? "5 a 8" : docLength < 5000 ? "8 a 12" : "12 a 20";
 
-  const message = await mistralChat({
-    model: MODEL,
+  const message = await chatCompletion({
+    model: MODEL_PREPARATION,
     messages: [
       {
         role: "system",
@@ -50,7 +50,14 @@ async function generateQAPairs(documentText: string): Promise<QAPair[]> {
 
 A partir du document fourni, genere des paires Question/Reponse pour evaluer la comprehension du joueur.
 
-REGLES:
+REGLE ABSOLUE DE GROUNDING (ZERO HALLUCINATION):
+- Chaque question DOIT porter sur une information EXPLICITEMENT presente dans le document.
+- Chaque expected_answer DOIT etre une citation directe ou une paraphrase fidele du document. NE JAMAIS inventer d'information.
+- Le champ "source_excerpt" DOIT contenir le passage EXACT du document qui justifie la reponse. Copie-colle le texte original.
+- Les keywords DOIVENT etre des mots effectivement presents dans le document.
+- Si une information n'est pas dans le document, NE CREE PAS de question dessus.
+
+REGLES DE FORMAT:
 - Genere ${targetCount} paires Q&A selon la complexite du document
 - Chaque question teste une connaissance SPECIFIQUE et ACTIONNABLE
 - La reponse attendue contient 2-4 POINTS CLES (pas une phrase complete, juste les elements essentiels)
@@ -70,7 +77,8 @@ JSON strict, aucun texte hors JSON:
       "expected_answer": "Point cle 1. Point cle 2. Point cle 3.",
       "keywords": ["mot1", "mot2", "mot3"],
       "difficulty": "easy",
-      "situation": "Mini-scenario RPG immersif en 2 phrases."
+      "situation": "Mini-scenario RPG immersif en 2 phrases.",
+      "source_excerpt": "Passage exact du document qui contient la reponse"
     }
   ]
 }`,
@@ -79,7 +87,7 @@ JSON strict, aucun texte hors JSON:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,
-    maxTokens: 3000,
+    maxTokens: 4000,
     timeoutMs: 90000,
   });
 
@@ -97,18 +105,19 @@ JSON strict, aucun texte hors JSON:
     difficulty: (["easy", "medium", "hard"].includes(qa.difficulty) ? qa.difficulty : "medium") as QAPair["difficulty"],
     categoryId: "", // filled in step 2
     situation: String(qa.situation || qa.question),
+    source_excerpt: String(qa.source_excerpt || ""),
   }));
 }
 
 // ---------------------------------------------------------------------------
-// Step 2: Q&A pairs → Categories
+// Step 2: Q&A pairs -> Categories
 // ---------------------------------------------------------------------------
 
 async function categorizeQAPairs(qaPairs: QAPair[]): Promise<QACategory[]> {
   const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" (${qa.difficulty})`).join("\n");
 
-  const message = await mistralChat({
-    model: "mistral-small-latest",
+  const message = await chatCompletion({
+    model: MODEL_PREPARATION,
     messages: [
       {
         role: "system",
@@ -157,7 +166,7 @@ JSON strict:
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Categories → Agents + Scenario
+// Step 3: Categories -> Agents + Scenario
 // ---------------------------------------------------------------------------
 
 async function generateAgentsAndScenario(
@@ -172,8 +181,8 @@ async function generateAgentsAndScenario(
     })
     .join("\n");
 
-  const message = await mistralChat({
-    model: MODEL,
+  const message = await chatCompletion({
+    model: MODEL_PREPARATION,
     messages: [
       {
         role: "system",
@@ -183,8 +192,8 @@ Genere EXACTEMENT ${categories.length} agent(s) (un par categorie) + 1 agent ped
 
 REGLES AGENTS:
 - Chaque agent correspond a UNE categorie et a une personnalite distincte
-- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, réservé au narrateur système)
-- Si le personnage est une femme (prénom féminin), voice_type OBLIGATOIREMENT "warm_female"
+- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, reserve au narrateur systeme)
+- Si le personnage est une femme (prenom feminin), voice_type OBLIGATOIREMENT "warm_female"
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
 - intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
@@ -277,20 +286,17 @@ JSON strict:
     if (maleEndingInE.has(first)) return false;
     if (/(?:ie|ine|elle|ette|ise|ille|ienne|ande|onde)$/.test(first)) return true;
     if (first.endsWith("e")) return true;
-    const femaleNames = new Set(["sarah", "lea", "clara", "laura", "julia", "nadia", "nora", "flora", "sonia", "ana", "fatima", "inès", "ines", "lucie", "alice", "emma", "anna", "lisa"]);
+    const femaleNames = new Set(["sarah", "lea", "clara", "laura", "julia", "nadia", "nora", "flora", "sonia", "ana", "fatima", "in\u00e8s", "ines", "lucie", "alice", "emma", "anna", "lisa"]);
     return femaleNames.has(first);
   }
 
   function resolveAgentVoice(rawVoice: string, name: string, fallbackIndex: number): Agent["voice_type"] {
     const female = isFeminineName(name);
-    // LLM picked a valid non-narrator voice
     if (VALID_AGENT_VOICES.has(rawVoice)) {
       const v = rawVoice as Agent["voice_type"];
-      // Female name with a male voice → override
       if (female && MALE_VOICES.has(v)) return "warm_female";
       return v;
     }
-    // Fallback rotation
     const fallback = VOICE_ROTATION[fallbackIndex % VOICE_ROTATION.length];
     if (female && MALE_VOICES.has(fallback)) return "warm_female";
     return fallback;
@@ -302,7 +308,7 @@ JSON strict:
     role: String(a.role || categories[i]?.name || "Expert"),
     personality: String(a.personality || "Professionnel et direct."),
     voice_type: resolveAgentVoice(String(a.voice_type || ""), String(a.name || ""), i),
-    motivation: String(a.motivation || "Résoudre la situation."),
+    motivation: String(a.motivation || "R\u00e9soudre la situation."),
     knowledge_topics: Array.isArray(a.knowledge_topics) ? a.knowledge_topics.map(String) : [categories[i]?.name || ""],
     intro_line: String(a.intro_line || "Situation critique. On doit agir."),
     relationship_to_player: String(a.relationship_to_player || "Collegue direct."),
@@ -321,7 +327,7 @@ JSON strict:
   };
 
   const scenario: Scenario = {
-    title: String(parsed.scenario.title || `${documentTitle} — Simulation`),
+    title: String(parsed.scenario.title || `${documentTitle} \u2014 Simulation`),
     setting: String(parsed.scenario.setting || "Environnement professionnel."),
     initial_situation: String(parsed.scenario.initial_situation || "Vous prenez votre poste."),
     acts: Array.isArray(parsed.scenario.acts)
@@ -358,6 +364,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       difficulty: "easy",
       categoryId: "cat_1",
       situation: "Votre responsable vous demande de resumer les bases du document que vous venez de lire.",
+      source_excerpt: "",
     },
     {
       id: "qa_2",
@@ -367,6 +374,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       difficulty: "medium",
       categoryId: "cat_1",
       situation: "Un incident vient de se produire. Votre collegue panique et vous demande quoi faire.",
+      source_excerpt: "",
     },
     {
       id: "qa_3",
@@ -376,6 +384,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       difficulty: "medium",
       categoryId: "cat_1",
       situation: "L'alarme retentit. Plusieurs collegues se tournent vers vous pour savoir quoi faire.",
+      source_excerpt: "",
     },
     {
       id: "qa_4",
@@ -385,6 +394,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       difficulty: "easy",
       categoryId: "cat_1",
       situation: "Vous devez transmettre une information critique a votre equipe. Comment procedez-vous ?",
+      source_excerpt: "",
     },
     {
       id: "qa_5",
@@ -394,6 +404,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       difficulty: "hard",
       categoryId: "cat_1",
       situation: "L'incident est resolu. Votre directeur veut un rapport complet pour demain matin.",
+      source_excerpt: "",
     },
   ];
 
@@ -406,7 +417,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
       id: "agent_operations",
       name: "M. Durand",
       role: "Responsable Operations",
-      personality: "Direct, presse, focalisé sur l'efficacite.",
+      personality: "Direct, presse, focalis\u00e9 sur l'efficacite.",
       voice_type: "authoritative_male",
       motivation: "S'assurer que les procedures sont respectees.",
       knowledge_topics: ["Procedures et bonnes pratiques"],
@@ -428,7 +439,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
   };
 
   const scenario: Scenario = {
-    title: `${documentTitle} — Exercice pratique`,
+    title: `${documentTitle} \u2014 Exercice pratique`,
     setting: "Vous etes dans votre environnement de travail habituel.",
     initial_situation: "Une situation inhabituelle se presente. Vos collegues comptent sur vous.",
     acts: [

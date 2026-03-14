@@ -12,6 +12,7 @@ import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
 import AgentGenerationView from "@/app/components/AgentGenerationView";
 import ActiveAgentDisplay from "@/app/components/ActiveAgentDisplay";
 import AgentPanel from "@/app/components/AgentPanel";
+import EmotionIndicator, { EmotionState } from "@/app/components/EmotionIndicator";
 import KnowledgeHeatmap from "@/app/components/KnowledgeHeatmap";
 import ObjectiveHUD from "@/app/components/ObjectiveHUD";
 import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
@@ -80,7 +81,7 @@ ${relevantKnowledge.join("\n---\n")}
 
 function extractPlayableChunks(
   buffer: string,
-  minChars = 30,
+  minChars = 15,
   maxChars = 140,
 ): { chunks: string[]; remainder: string } {
   const chunks: string[] = [];
@@ -197,6 +198,15 @@ export default function Home() {
   const ttsChunkSeqRef = useRef(0);
   const ttsPreloadRef = useRef<Map<string, Promise<string | null>>>(new Map());
 
+  // Emotion visual feedback state (from backend meta events)
+  const [emotionState, setEmotionState] = useState<EmotionState>({
+    current: "neutral",
+    intensity: 0.3,
+    trajectory: "stable",
+  });
+  // Indicates it's the player's turn to speak (all TTS finished playing)
+  const [isPlayerTurn, setIsPlayerTurn] = useState(false);
+
   // Multi-agent state
   const [multiAgentState, setMultiAgentState] = useState<MultiAgentGameState | null>(null);
   // Tracks which agent is visually "on screen" — only updates when that agent actually starts speaking.
@@ -310,6 +320,7 @@ export default function Home() {
   const processTtsQueue = useCallback(async () => {
     if (isTtsPlayingRef.current) return;
     isTtsPlayingRef.current = true;
+    setIsPlayerTurn(false);
 
     try {
       const popNextChunk = () => {
@@ -327,6 +338,14 @@ export default function Home() {
       while (true) {
         if (!currentChunk) break;
         if (isRecordingRef.current) break;
+
+        // Preload next chunk while current one plays (zero-gap optimization)
+        const peekNext = ttsQueueRef.current.find(
+          (c) => c.generation === ttsGenerationRef.current
+        );
+        if (peekNext) {
+          void getOrCreateTtsPromise(peekNext);
+        }
 
         const audioUrl = await getOrCreateTtsPromise(currentChunk);
         if (audioUrl) {
@@ -374,6 +393,9 @@ export default function Home() {
         const cb = autoKickoffCallbackRef.current;
         autoKickoffCallbackRef.current = null;
         cb();
+      } else if (ttsQueueRef.current.length === 0) {
+        // All TTS segments finished — signal it's the player's turn
+        setIsPlayerTurn(true);
       }
     }
   }, [getOrCreateTtsPromise]);
@@ -440,6 +462,7 @@ export default function Home() {
     const baseState = options?.stateOverride || multiAgentState;
     if (!baseState) return;
     setIsLoading(true);
+    setIsPlayerTurn(false);
     // Show the speaking agent immediately — don't wait for streaming to end.
     setDisplayActiveAgentId(baseState.activeAgentId);
 
@@ -493,6 +516,9 @@ export default function Home() {
       let ttsBuffer = "";
       const suppressCurrentTurnOutput = false;
 
+      // Track whether narrator text from meta has been enqueued for TTS
+      let narratorTextEnqueued = false;
+
       const handleSseBlock = (block: string) => {
         const dataMatch = block.match(/^data: (.+)$/m);
         if (!dataMatch) return;
@@ -518,6 +544,28 @@ export default function Home() {
                 }
               }
             }
+            // Parse structured emotion state from meta for EmotionIndicator
+            if (event.emotion && typeof event.emotion === "object") {
+              const emo = event.emotion as {
+                current?: string;
+                intensity?: number;
+                trajectory?: string;
+              };
+              setEmotionState({
+                current: (emo.current as EmotionState["current"]) || "neutral",
+                intensity: typeof emo.intensity === "number" ? emo.intensity : 0.3,
+                trajectory: (emo.trajectory as EmotionState["trajectory"]) || "stable",
+              });
+            }
+            // Parse speakerType from meta
+            if (event.speakerType) {
+              setSpeakerType(event.speakerType === "narrator" ? "narrator" : "npc");
+            }
+            // Narrator text: play with calm_narrator voice before dialogue
+            if (event.narrator && typeof event.narrator === "string" && event.narrator.trim()) {
+              narratorTextEnqueued = true;
+              enqueueTtsSegment(event.narrator.trim(), "calm_narrator", "calm", currentTtsGeneration);
+            }
           } else if (event.type === "token") {
             if (suppressCurrentTurnOutput) return;
             const tokenText = String(event.content || "");
@@ -533,9 +581,18 @@ export default function Home() {
             const parsed = extractPlayableChunks(ttsBuffer);
             ttsBuffer = parsed.remainder;
             for (const chunk of parsed.chunks) {
-              const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
-              for (const segment of routedSegments) {
-                enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+              // When narrator text came via meta event, skip asterisk parsing for dialogue
+              // (narrator already enqueued separately) — route directly with client voice.
+              if (narratorTextEnqueued) {
+                const clean = normalizeTtsText(chunk);
+                if (clean) {
+                  enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
+                }
+              } else {
+                const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
+                for (const segment of routedSegments) {
+                  enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+                }
               }
             }
 
@@ -572,9 +629,16 @@ export default function Home() {
       }
 
       if (!suppressCurrentTurnOutput && ttsBuffer.trim()) {
-        const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
-        for (const segment of routedSegments) {
-          enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+        if (narratorTextEnqueued) {
+          const clean = normalizeTtsText(ttsBuffer.trim());
+          if (clean) {
+            enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
+          }
+        } else {
+          const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
+          for (const segment of routedSegments) {
+            enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
+          }
         }
       }
 
@@ -1972,10 +2036,16 @@ export default function Home() {
           />
         )}
 
-        {/* ── ACTIVE AGENT DISPLAY (multi-agent only) ── */}
+        {/* ── ACTIVE AGENT DISPLAY + EMOTION INDICATOR (multi-agent only) ── */}
         {isMultiAgent && activeAgentState && gameState.isGameStarted && (
-          <div style={{ position: "relative", zIndex: 20 }}>
-            <ActiveAgentDisplay agentState={activeAgentState} />
+          <div style={{ position: "relative", zIndex: 20, display: "flex", alignItems: "center", gap: 12, padding: "0 16px" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ActiveAgentDisplay agentState={activeAgentState} />
+            </div>
+            <EmotionIndicator
+              emotion={emotionState}
+              agentName={activeAgentState.agent.name}
+            />
           </div>
         )}
 
@@ -2229,17 +2299,44 @@ export default function Home() {
               position:      "relative",
               zIndex:        20,
               display:       "flex",
-              justifyContent:"center",
-              padding:       "20px 24px",
+              flexDirection: "column",
+              alignItems:    "center",
+              gap:           6,
+              padding:       "16px 24px 20px",
               background:    "#181B23",
-              borderTop:     "1px solid rgba(255,255,255,0.10)",
+              borderTop:     isPlayerTurn && !isLoading
+                ? "2px solid rgba(59,130,246,0.5)"
+                : "1px solid rgba(255,255,255,0.10)",
+              transition:    "border-top 0.3s ease",
             }}
           >
+            {/* Player turn indicator */}
+            {isPlayerTurn && !isLoading && !gameState.isGameOver && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: [0.6, 1, 0.6], y: 0 }}
+                transition={{ opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" }, y: { duration: 0.25 } }}
+                style={{
+                  fontFamily: "'Space Mono', monospace",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#3B82F6",
+                  marginBottom: 2,
+                }}
+              >
+                A vous...
+              </motion.div>
+            )}
             <PushToTalk
               onSpeechResult={(t) => sendAction(t)}
               disabled={isLoading || gameState.isGameOver}
               onRecordingChange={(isRecording) => {
                 isRecordingRef.current = isRecording;
+                if (isRecording) {
+                  setIsPlayerTurn(false);
+                }
                 if (isRecording && audioRef.current) {
                   audioRef.current.pause();
                   audioRef.current = null;

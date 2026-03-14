@@ -1,5 +1,5 @@
 import { Agent, EvaluationTopic, Scenario, SimulationSetup } from "@/app/lib/types";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
+import { chatCompletion } from "@/app/lib/agents/openai-client";
 
 interface DocumentAnalysisInput {
   docTitle: string;
@@ -13,8 +13,7 @@ interface SetupSimulationToolOutput {
   evaluation_grid: EvaluationTopic[];
 }
 
-const ORCHESTRATION_MODEL =
-  process.env.MISTRAL_ORCHESTRATION_MODEL || "mistral-large-latest";
+const ORCHESTRATION_MODEL = "gpt-4.1-mini";
 
 // ---------------------------------------------------------------------------
 // Complexity assessment — drives elastic agent/act count
@@ -323,9 +322,9 @@ export async function orchestrateSimulation(
     `(${input.keyConcepts.length} concepts, ${input.sectionSummaries.length} sections)`);
 
   try {
-    console.log("[orchestrator] Appel Mistral JSON mode — model:", ORCHESTRATION_MODEL);
+    console.log("[orchestrator] Appel OpenAI JSON mode — model:", ORCHESTRATION_MODEL);
 
-    const message = await mistralChat({
+    const message = await chatCompletion({
       model: ORCHESTRATION_MODEL,
       messages: [
         { role: "system", content: buildSystemPrompt(complexity) },

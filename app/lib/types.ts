@@ -108,7 +108,7 @@ export interface SimulationReport {
   employeeVibe?: EmployeeVibe;
 }
 
-// Function call types from Mistral
+// Function call types from LLM
 export type GameAction =
   | { type: "update_hp"; amount: number }
   | { type: "manager_assessment"; assessment: ManagerAssessment }
@@ -242,6 +242,8 @@ export interface MultiAgentGameState {
   interactionState?: InteractionState;
   /** Inter-agent shared memory for orchestration synergie */
   sharedMemory?: SharedMemoryNote[];
+  /** Current emotion state of the active agent (deterministic engine) */
+  emotionState?: EmotionState;
 }
 
 // ============================================
@@ -257,6 +259,8 @@ export interface QAPair {
   categoryId: string;
   /** RPG situation context for the agent to role-play */
   situation: string;
+  /** Exact passage from the source document that supports the expected answer */
+  source_excerpt: string;
 }
 
 export interface QACategory {
@@ -287,6 +291,37 @@ export interface InteractionState {
   completedQAs: string[];
   failedQAs: string[];
   currentQAPairId: string;
+}
+
+// ============================================
+// Emotion Engine Types
+// ============================================
+
+export type EmotionType = 'neutral' | 'pleased' | 'annoyed' | 'angry' | 'suspicious' | 'relieved' | 'stressed';
+
+export interface EmotionState {
+  current: EmotionType;
+  intensity: number;       // 0.0 → 1.0
+  trajectory: 'escalating' | 'stable' | 'cooling';
+  reason?: string;         // Why this emotion (for debug/UI)
+}
+
+export type EmotionEvent =
+  | { type: 'correct_answer'; firstTry: boolean }
+  | { type: 'wrong_answer'; failCount: number }
+  | { type: 'hesitation'; responseTimeMs: number }
+  | { type: 'learning_complete' }
+  | { type: 'act_change' };
+
+// ============================================
+// Turn Response Types
+// ============================================
+
+export interface TurnResponse {
+  narrator?: string;       // Scene-setting text (always calm_narrator voice)
+  dialogue: string;        // Client virtual's line
+  emotion: EmotionState;   // Current emotional state
+  stateTransition: InteractionState; // New state after this turn
 }
 
 // ============================================

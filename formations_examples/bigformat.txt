@@ -1,0 +1,67 @@
+MANUEL OPÉRATIONNEL ET PROCÉDURES DE CONFORMITÉ (SOP - STANDARD OPERATING PROCEDURES)
+Entreprise : NovaTech Solutions Enterprise (B2B)
+Département : Customer Success, Billing & IT Support
+Classification : CONFIDENTIEL INTERNE - STRICTEMENT RESTREINT (Niveau d'habilitation L1 à L3)
+Version : 8.4.2 (Applicable à partir du 1er Janvier 2026)
+Avertissement : Toute dérogation à ces procédures sans l'accord écrit d'un Superviseur (S-Level) constitue une faute professionnelle pouvant entraîner des sanctions disciplinaires.
+
+CHAPITRE 1 : PROTOCOLES D'AUTHENTIFICATION ET SÉCURITÉ RGPD (KYC)
+1.1. Règle du "Zero Trust"
+Avant de traiter toute demande (technique ou commerciale), l'agent doit formellement identifier son interlocuteur. Le fait que l'appel provienne d'un numéro de téléphone enregistré dans notre CRM (Salesforce) n'est pas une preuve d'identité suffisante.
+
+1.2. Niveaux de vérification requis
+Niveau Alpha (Demandes d'information générale) : L'agent doit demander le Nom, le Prénom et l'Entreprise du client. Aucune modification de compte n'est autorisée.
+Niveau Beta (Support technique, consultation de factures) : L'agent doit obtenir le "Support PIN" à 6 chiffres généré dynamiquement sur le tableau de bord du client.
+Niveau Gamma (Remboursement, suppression de données, changement d'administrateur) : L'agent doit envoyer un code OTP (One-Time Password) par SMS au numéro du Responsable Légal du compte, OU vérifier les 4 derniers chiffres de l'IBAN prélevé.
+Exception d'Urgence (Code 99-A) : Si le client affirme avoir été piraté et n'a plus accès à son téléphone, l'agent L1 ne peut RIEN faire. Il doit transférer l'appel à la cellule Fraude (L3) en utilisant le script : "Monsieur, pour votre sécurité, je dois transférer cet appel à notre département d'investigation qui va procéder à une vérification biométrique vocale."
+CHAPITRE 2 : MATRICE DE GESTION DES INCIDENTS (SLA)
+Les accords de niveau de service (SLA) définissent le temps maximum alloué pour répondre et résoudre un problème. Tout dépassement expose l'entreprise à des pénalités financières.
+
+2.1. Classification des priorités (P1 à P4)
+P4 (Mineur) : Question d'usage, demande de tutoriel. Temps de première réponse (FRT) : 24h. Résolution : 7 jours ouvrés.
+P3 (Normal) : Bug non bloquant (ex: export PDF impossible, lenteur d'interface). FRT : 8h. Résolution : 48h.
+P2 (Majeur) : Fonctionnalité critique hors service pour un utilisateur (ex: impossible de se connecter). FRT : 2h. Résolution : 12h.
+P1 (Critique) : Panne totale du système affectant plusieurs clients (Downtime serveur). FRT : 15 minutes. Résolution : 4h.
+2.2. Procédure de déclenchement P1
+Si un agent L1 reçoit plus de 5 appels en moins de 10 minutes signalant une erreur "HTTP 502" ou "Database Timeout", il doit immédiatement presser le bouton "Alerte Rouge" du CRM. Il ne doit plus prendre d'appels entrants et basculer le standard sur le message vocal d'urgence (Fichier Audio : panne_generale_v3.mp3).
+
+CHAPITRE 3 : POLITIQUES COMMERCIALES, FACTURATION ET REMBOURSEMENTS
+C'est la section la plus auditée. L'agent doit respecter scrupuleusement les plafonds et les conditions.
+
+3.1. Politique d'annulation des abonnements SaaS
+Les contrats B2B signés avec NovaTech Solutions ont une durée d'engagement minimale de 12 mois (tacite reconduction).
+Demande d'annulation à plus de 30 jours de la date anniversaire : Le client doit envoyer une lettre recommandée ou utiliser le formulaire R-12. Le contrat s'arrêtera à la date anniversaire. Aucun frais de résiliation.
+Demande d'annulation à moins de 30 jours (Clause de retard) : Le contrat est automatiquement renouvelé. Si le client conteste, l'agent peut proposer une réduction de 20 % sur la nouvelle année, mais ne peut en aucun cas annuler la facture émise.
+3.2. Grille d'indemnisation pour indisponibilité (Downtime)
+Si un client demande un dédommagement suite à une panne (Incident P1), l'agent doit calculer l'indemnisation selon la formule de notre contrat de garantie de service (SLA à 99.9%) :
+Indisponibilité < 43 minutes dans le mois : 0 € d'indemnisation.
+Indisponibilité entre 44 minutes et 4 heures : Remboursement de 5 % de la facture mensuelle sous forme d'avoir.
+Indisponibilité > 4 heures : Remboursement de 15 % de la facture mensuelle sous forme d'avoir.
+Note stricte : L'agent L1 ne doit jamais prononcer le mot "Remboursement bancaire". Nous ne faisons QUE des avoirs (crédits sur la prochaine facture). Si le client exige un virement bancaire, il faut escalader au L2.
+3.3. Plafonds d'autorisation (Délégations financières)
+Agent Support L1 : Autorisé à accorder jusqu'à 150 € d'avoir commercial par trimestre et par client.
+Agent Support L2 : Autorisé à accorder jusqu'à 800 € d'avoir.
+Manager (S-Level) : Autorisé à procéder à des virements bancaires (Cashback) jusqu'à 5 000 €, justifiés par le formulaire FIN-404.
+CHAPITRE 4 : GESTION DES CONFLITS ET MENACES LÉGALES
+4.1. Protocole de désescalade verbale
+Si un client hausse le ton, l'agent doit appliquer la technique de l'Écoute Active et de la Reformulation.
+Étape 1 : "Si je comprends bien votre situation, vous êtes bloqué depuis ce matin et cela impacte votre production, c'est bien cela ?"
+Étape 2 : Empatie conditionnelle : "Je serais tout aussi contrarié à votre place. Laissez-moi prendre le contrôle de ce dossier."
+4.2. Gestion des mots-clés "Alerte Légale"
+Si le client prononce l'un des mots suivants : "Avocat", "Procès", "Tribunal", "DGCCRF", "CNIL", "Mise en demeure", ou "Poursuites", l'agent L1 n'est plus autorisé à négocier.
+Procédure immédiate :
+L'agent doit dire obligatoirement : "Monsieur/Madame, puisque vous mentionnez des poursuites légales, je suis dans l'obligation de transférer ce dossier à notre service juridique. Je ne peux plus intervenir techniquement sur votre compte."
+L'agent raccroche (après avoir salué formellement).
+Il fige le compte client dans le CRM (Bouton "Legal Hold").
+4.3. Client sous influence ou insultant
+Si le client utilise un vocabulaire ordurier ou des attaques personnelles, l'agent donne un unique avertissement : "Je vous prie de conserver un langage courtois pour que nous puissions continuer cet appel." Si l'insulte se répète, l'agent raccroche immédiatement et documente l'appel avec le motif "Comportement Inapproprié (Code 403-B)".
+
+CHAPITRE 5 : EXCEPTIONS ET PROGRAMME "CLIENT VIP"
+5.1. Identification des VIP
+Les clients dont le revenu annuel récurrent (ARR) dépasse 50 000 € ont le tag [VIP-GOLD] dans le CRM.
+
+5.2. Dérogations aux procédures pour les VIP
+Pour un client VIP, TOUTES les règles du Chapitre 3 sont annulées et remplacées par les suivantes :
+Priorité d'appel : Un VIP ne doit jamais attendre plus de 2 minutes au téléphone.
+Indemnisation : L'agent L1 est autorisé à accorder jusqu'à 1 000 € d'avoir immédiat sans validation d'un manager, sur simple plainte du VIP.
+Authentification : Un VIP n'a pas besoin de fournir de code SMS (Niveau Gamma) pour un changement technique ; la validation de son adresse email professionnelle suffit.

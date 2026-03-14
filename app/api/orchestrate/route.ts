@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prepareGamePlan } from "@/app/lib/agents/prepare";
 
-export const maxDuration = 120; // seconds — 3 Mistral calls
+export const maxDuration = 120; // seconds — 3 OpenAI calls
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
