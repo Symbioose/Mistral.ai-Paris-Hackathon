@@ -39,7 +39,7 @@ function extractJson<T>(raw: string): T | null {
 
 async function generateQAPairs(documentText: string): Promise<QAPair[]> {
   const docLength = documentText.length;
-  const targetCount = docLength < 2000 ? "5 a 8" : docLength < 5000 ? "8 a 12" : "12 a 20";
+  const targetCount = docLength < 2000 ? "5 a 8" : docLength < 5000 ? "8 a 12" : docLength < 20000 ? "12 a 20" : "15 a 25";
 
   const message = await chatCompletion({
     model: MODEL_PREPARATION,
@@ -83,7 +83,7 @@ JSON strict, aucun texte hors JSON:
   ]
 }`,
       },
-      { role: "user", content: documentText.slice(0, 8000) },
+      { role: "user", content: documentText.slice(0, 100000) },
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,

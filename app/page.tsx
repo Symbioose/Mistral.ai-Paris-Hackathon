@@ -7,6 +7,7 @@ import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
 import PushToTalk from "@/app/components/PushToTalk";
+import TextInput from "@/app/components/TextInput";
 import FileUpload from "@/app/components/FileUpload";
 import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
 import AgentGenerationView from "@/app/components/AgentGenerationView";
@@ -18,6 +19,7 @@ import ObjectiveHUD from "@/app/components/ObjectiveHUD";
 import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
 import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
 import MissionFeed from "@/app/components/MissionFeed";
+import AgentTransitionOverlay from "@/app/components/AgentTransitionOverlay";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -242,6 +244,22 @@ export default function Home() {
   } | null>(null);
   const prevTotalScoreRef = useRef<number>(50);
 
+  // ── Agent switch transition overlay ──
+  const [agentTransition, setAgentTransition] = useState<{ agent: import("@/app/lib/types").Agent } | null>(null);
+  const prevDisplayAgentIdRef = useRef<string>("");
+
+  // Detect agent switches and trigger the visual transition overlay.
+  useEffect(() => {
+    if (!displayActiveAgentId || displayActiveAgentId === prevDisplayAgentIdRef.current) return;
+    const isFirstAgent = prevDisplayAgentIdRef.current === "";
+    prevDisplayAgentIdRef.current = displayActiveAgentId;
+    // Skip transition for the very first agent (game start).
+    if (isFirstAgent) return;
+    const agentState = multiAgentState?.agents.find((a) => a.agent.id === displayActiveAgentId);
+    if (agentState) {
+      setAgentTransition({ agent: agentState.agent });
+    }
+  }, [displayActiveAgentId, multiAgentState]);
 
   // Guard: prevent auto-kickoff from firing twice for the same state.
   const autoKickoffFiredRef = useRef<string | null>(null);
@@ -876,49 +894,9 @@ export default function Home() {
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
 
-  // ====== LEGACY SINGLE-AGENT GAME ======
   const sendAction = useCallback(async (playerText: string) => {
-    // If in multi-agent mode, delegate
-    if (multiAgentState) {
-      return sendMultiAgentAction(playerText);
-    }
-
-    setIsLoading(true);
-    try {
-      // Read from ref to avoid stale closure on gameState fields
-      const gs = gameStateRef.current;
-      const res = await fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerText,
-          turnCount: gs.turnCount,
-          gameState: { hp: gs.hp, maxHp: gs.maxHp, currentStation: gs.currentStation, inventory: gs.inventory },
-          sessionId: sessionIdRef.current,
-          documentContext,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.narrative || "Erreur API game");
-      }
-      const typedData = data as GameResponse;
-
-      applyActions(typedData.actions || []);
-      setLatestReport(typedData.report || null);
-      setSpeakerName(typedData.speakerName || "Maître du Jeu");
-      setSpeakerType(typedData.speakerType || "narrator");
-      setGameState((prev) => ({ ...prev, dialogue: typedData.narrative, turnCount: prev.turnCount + 1, isGameStarted: true }));
-      setScreenPhase("game");
-
-      if (typedData.audioBase64) playAudio(typedData.audioBase64);
-    } catch (e) {
-      console.error("API error:", e);
-      setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [multiAgentState, sendMultiAgentAction, documentContext, applyActions, playAudio]);
+    return sendMultiAgentAction(playerText);
+  }, [sendMultiAgentAction]);
 
   const startGame = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
@@ -927,42 +905,8 @@ export default function Home() {
     setAssessments([]);
     setLatestReport(null);
     setGameEvents([]);
-
-    if (documentContext) {
-      // Document mode → go to orchestration
-      setScreenPhase("orchestrating");
-    } else {
-      // Fallback mode → legacy single-agent
-      setMultiAgentState(null);
-      setScreenPhase("game");
-      // We need to trigger sendAction after state updates
-      setTimeout(() => {
-        fetch("/api/game", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            playerText: "",
-            turnCount: 0,
-            gameState: { hp: 100, maxHp: 100, currentStation: "Châtelet-Les Halles", inventory: INITIAL_GAME_STATE.inventory },
-            sessionId: sessionIdRef.current,
-            documentContext: null,
-          }),
-        })
-          .then((res) => res.json())
-          .then((data: GameResponse) => {
-            applyActions(data.actions || []);
-            setSpeakerName(data.speakerName || "Maître du Jeu");
-            setSpeakerType(data.speakerType || "narrator");
-            setGameState((prev) => ({ ...prev, dialogue: data.narrative, turnCount: 1, isGameStarted: true }));
-            if (data.audioBase64) playAudio(data.audioBase64);
-          })
-          .catch((e) => {
-            console.error("Init error:", e);
-            setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
-          });
-      }, 0);
-    }
-  }, [documentContext, applyActions, playAudio]);
+    setScreenPhase("orchestrating");
+  }, []);
 
   const handleOrchestrationReady = useCallback(async (setup: SimulationSetup & { gamePlan?: GamePlan }) => {
     // Build RAG index from document
@@ -1146,9 +1090,11 @@ export default function Home() {
     setGameEvents([]);
     setMissionFeedItems([]);
     setActTransition(null);
+    setAgentTransition(null);
     setSimulationEnd(null);
     setLearningModeState({ active: false, message: "" });
     prevTotalScoreRef.current = 50;
+    prevDisplayAgentIdRef.current = "";
   }, []);
 
   // Get active agent for display — use displayActiveAgentId so the name only changes
@@ -2385,32 +2331,40 @@ export default function Home() {
                 A vous...
               </motion.div>
             )}
-            <PushToTalk
-              onSpeechResult={(t) => sendAction(t)}
-              disabled={isLoading || gameState.isGameOver}
-              onRecordingChange={(isRecording) => {
-                isRecordingRef.current = isRecording;
-                if (isRecording) {
-                  setIsPlayerTurn(false);
-                  // Cancel any pending auto-kickoff — the user is speaking now
-                  autoKickoffCallbackRef.current = null;
-                }
-                if (isRecording && audioRef.current) {
-                  audioRef.current.onended = null;
-                  audioRef.current.onerror = null;
-                  audioRef.current.onpause = null;
-                  audioRef.current.pause();
-                  audioRef.current.removeAttribute("src");
-                  audioRef.current = null;
-                }
-                if (isRecording) {
-                  ttsGenerationRef.current += 1;
-                  ttsQueueRef.current = [];
-                  ttsPreloadRef.current.clear();
-                  isTtsPlayingRef.current = false;
-                }
-              }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 20, width: "100%" }}>
+              <PushToTalk
+                onSpeechResult={(t) => sendAction(t)}
+                disabled={isLoading || gameState.isGameOver}
+                onRecordingChange={(isRecording) => {
+                  isRecordingRef.current = isRecording;
+                  if (isRecording) {
+                    setIsPlayerTurn(false);
+                    // Cancel any pending auto-kickoff — the user is speaking now
+                    autoKickoffCallbackRef.current = null;
+                  }
+                  if (isRecording && audioRef.current) {
+                    audioRef.current.onended = null;
+                    audioRef.current.onerror = null;
+                    audioRef.current.onpause = null;
+                    audioRef.current.pause();
+                    audioRef.current.removeAttribute("src");
+                    audioRef.current = null;
+                  }
+                  if (isRecording) {
+                    ttsGenerationRef.current += 1;
+                    ttsQueueRef.current = [];
+                    ttsPreloadRef.current.clear();
+                    isTtsPlayingRef.current = false;
+                  }
+                }}
+              />
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                <TextInput
+                  onSubmit={(t) => sendAction(t)}
+                  disabled={isLoading || !isPlayerTurn || gameState.isGameOver}
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -2447,6 +2401,14 @@ export default function Home() {
           />
         )}
       </div>
+
+      {/* ── AGENT SWITCH TRANSITION ── */}
+      {agentTransition && (
+        <AgentTransitionOverlay
+          agent={agentTransition.agent}
+          onComplete={() => setAgentTransition(null)}
+        />
+      )}
 
       {/* ── ACT TRANSITION OVERLAY ── */}
       {actTransition && (

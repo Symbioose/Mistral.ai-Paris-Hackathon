@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MAX_CHARS = 12000; // ~3000 tokens — safe for Mistral context
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(request: NextRequest) {
@@ -46,12 +45,6 @@ export async function POST(request: NextRequest) {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
 
-    // Truncate to avoid blowing up the Mistral context
-    const truncated = text.length > MAX_CHARS;
-    if (truncated) {
-      text = text.slice(0, MAX_CHARS) + "\n\n[Document tronqué à 12 000 caractères pour des raisons de performance.]";
-    }
-
     if (!text || text.length < 50) {
       return NextResponse.json({ error: "Le fichier semble vide ou illisible." }, { status: 400 });
     }
@@ -60,7 +53,6 @@ export async function POST(request: NextRequest) {
       text,
       filename: file.name,
       charCount: text.length,
-      truncated,
     });
   } catch (e) {
     console.error("[Upload] Error:", e);
