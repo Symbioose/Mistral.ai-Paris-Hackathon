@@ -108,7 +108,7 @@ export interface SimulationReport {
   employeeVibe?: EmployeeVibe;
 }
 
-// Function call types from Mistral
+// Function call types from LLM
 export type GameAction =
   | { type: "update_hp"; amount: number }
   | { type: "manager_assessment"; assessment: ManagerAssessment }
@@ -257,6 +257,8 @@ export interface QAPair {
   categoryId: string;
   /** RPG situation context for the agent to role-play */
   situation: string;
+  /** Exact passage from the source document that supports the expected answer */
+  source_excerpt: string;
 }
 
 export interface QACategory {

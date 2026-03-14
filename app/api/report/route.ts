@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
+import { chatCompletion } from "@/app/lib/agents/openai-client";
 import { ManagerAssessment, MultiAgentGameState, SimulationReport, FailurePattern, EmployeeVibe } from "@/app/lib/types";
 
 type ReportRequest = {
@@ -281,8 +281,8 @@ export async function POST(req: NextRequest) {
 
     const docExcerpt = String(body.documentContext || "").slice(0, 3500);
 
-    const message = await mistralChat({
-      model: "mistral-large-latest",
+    const message = await chatCompletion({
+      model: "gpt-4.1-mini",
       messages: [
         {
           role: "system",

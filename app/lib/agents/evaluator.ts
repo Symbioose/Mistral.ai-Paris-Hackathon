@@ -1,9 +1,7 @@
 import { MultiAgentGameState } from "@/app/lib/types";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
+import { chatCompletion } from "@/app/lib/agents/openai-client";
 
-// High-stakes decisions (advance act, conclude, chaos) require the best model.
-const EVALUATION_MODEL =
-  process.env.MISTRAL_EVALUATION_MODEL || "mistral-large-latest";
+const EVALUATION_MODEL = "gpt-4.1-nano";
 
 export interface EvaluationUpdate {
   score_updates: Array<{ topic: string; delta: number; reason: string }>;
@@ -49,7 +47,7 @@ export async function evaluateExchange(
   agentResponse: string,
   gameState: MultiAgentGameState,
 ): Promise<EvaluationUpdate> {
-  const message = await mistralChat({
+  const message = await chatCompletion({
     model: EVALUATION_MODEL,
     messages: [
       {

@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion, SharedMemoryNote } from "@/app/lib/types";
-import { mistralChat } from "@/app/lib/agents/mistral-client";
-import { streamText } from "ai";
-import { mistral as vercelMistral } from "@ai-sdk/mistral";
+import { chatCompletion, streamChatCompletion } from "@/app/lib/agents/openai-client";
+
+const MODEL_NANO = "gpt-4.1-nano";
+const MODEL_MINI = "gpt-4.1-mini";
 
 // ---------------------------------------------------------------------------
-// Mistral Function Calling — Tools for agent orchestration
+// OpenAI Function Calling — Tools for agent orchestration
 // ---------------------------------------------------------------------------
 
 const ORCHESTRATION_TOOLS = [
@@ -14,18 +15,18 @@ const ORCHESTRATION_TOOLS = [
     function: {
       name: "update_emotion",
       description:
-        "Change l'état émotionnel de l'agent actif. Affecte la voix TTS et les animations.",
+        "Change l'etat emotionnel de l'agent actif. Affecte la voix TTS et les animations.",
       parameters: {
         type: "object",
         properties: {
           emotion: {
             type: "string",
             enum: ["calm", "stressed", "angry", "panicked", "suspicious"],
-            description: "La nouvelle émotion de l'agent",
+            description: "La nouvelle emotion de l'agent",
           },
           reason: {
             type: "string",
-            description: "Courte raison du changement émotionnel (1 phrase)",
+            description: "Courte raison du changement emotionnel (1 phrase)",
           },
         },
         required: ["emotion", "reason"],
@@ -37,18 +38,18 @@ const ORCHESTRATION_TOOLS = [
     function: {
       name: "trigger_event",
       description:
-        "Déclenche un événement narratif dramatique dans la simulation (alarme, appel urgent, panne, intrusion, etc.)",
+        "Declenche un evenement narratif dramatique dans la simulation (alarme, appel urgent, panne, intrusion, etc.)",
       parameters: {
         type: "object",
         properties: {
           event_type: {
             type: "string",
             enum: ["alert", "complication", "revelation", "time_pressure", "plot_twist"],
-            description: "Type d'événement narratif",
+            description: "Type d'evenement narratif",
           },
           description: {
             type: "string",
-            description: "Description courte de l'événement (1 phrase)",
+            description: "Description courte de l'evenement (1 phrase)",
           },
         },
         required: ["event_type", "description"],
@@ -75,7 +76,7 @@ const ORCHESTRATION_TOOLS = [
           priority: {
             type: "string",
             enum: ["low", "medium", "high"],
-            description: "Priorité du message",
+            description: "Priorite du message",
           },
         },
         required: ["to_agent", "note", "priority"],
@@ -103,8 +104,8 @@ async function runOrchestration(
   scenarioContext: string,
 ): Promise<OrchestrationResult> {
   try {
-    const message = await mistralChat({
-      model: "mistral-large-latest",
+    const message = await chatCompletion({
+      model: MODEL_NANO,
       messages: [
         {
           role: "system",
@@ -113,24 +114,24 @@ Agent actif: ${agentName} (${agentRole})
 Phase: ${phase} | Score joueur: ${currentScore}/100
 Contexte: ${scenarioContext}
 
-RÈGLES OBLIGATOIRES pour update_emotion (TOUJOURS appeler si le joueur a répondu):
-- Phase ASKING ou RE_ASKING, réponse correcte → émotion = "calm" (soulagé, satisfait)
-- Phase REPHRASING (1ère erreur) → émotion = "stressed" (légèrement contraint)
-- Phase LEARNING (2ème erreur) → émotion = "angry" ou "panicked" selon la personnalité
-- Kickoff initial (sans réponse du joueur) → émotion = "calm"
-- TOUJOURS appeler update_emotion quand le joueur a envoyé un message
+REGLES OBLIGATOIRES pour update_emotion (TOUJOURS appeler si le joueur a repondu):
+- Phase ASKING ou RE_ASKING, reponse correcte -> emotion = "calm" (soulage, satisfait)
+- Phase REPHRASING (1ere erreur) -> emotion = "stressed" (legerement contraint)
+- Phase LEARNING (2eme erreur) -> emotion = "angry" ou "panicked" selon la personnalite
+- Kickoff initial (sans reponse du joueur) -> emotion = "calm"
+- TOUJOURS appeler update_emotion quand le joueur a envoye un message
 
-Outils supplémentaires:
-- trigger_event: déclenche un événement narratif dramatique (alarme, appel urgent, revelation). Max 1 toutes les 4 interactions.
-- agent_note: envoie une note interne secrète à un collègue. Crée du drama! Ex: "Attention, ce stagiaire ne maîtrise pas les procédures de sécurité, surveillez-le."
+Outils supplementaires:
+- trigger_event: declenche un evenement narratif dramatique (alarme, appel urgent, revelation). Max 1 toutes les 4 interactions.
+- agent_note: envoie une note interne secrete a un collegue. Cree du drama! Ex: "Attention, ce stagiaire ne maitrise pas les procedures de securite, surveillez-le."
 
-IMPORTANT: Utilise agent_note quand le joueur fait des erreurs répétées — préviens les autres agents.`,
+IMPORTANT: Utilise agent_note quand le joueur fait des erreurs repetees — previens les autres agents.`,
         },
         {
           role: "user",
           content: playerMessage
             ? `Le joueur a dit: "${playerMessage}"`
-            : "Début d'interaction — l'agent prend la parole.",
+            : "Debut d'interaction — l'agent prend la parole.",
         },
       ],
       tools: ORCHESTRATION_TOOLS,
@@ -279,7 +280,7 @@ function getNextQAInfo(gameState: MultiAgentGameState): {
 }
 
 // ---------------------------------------------------------------------------
-// Evaluate player answer against expected answer
+// Evaluate player answer against expected answer (grounded in document)
 // ---------------------------------------------------------------------------
 
 interface EvalResult {
@@ -292,21 +293,26 @@ async function evaluateAnswer(
   qa: QAPair,
 ): Promise<EvalResult> {
   try {
-    const message = await mistralChat({
-      model: "mistral-large-latest",
+    const sourceContext = qa.source_excerpt
+      ? `\nEXTRAIT DU DOCUMENT SOURCE: "${qa.source_excerpt}"`
+      : "";
+
+    const message = await chatCompletion({
+      model: MODEL_NANO,
       messages: [
         {
           role: "system",
-          content: `Tu es un evaluateur de formation. Compare la reponse du joueur avec la reponse attendue.
+          content: `Tu es un evaluateur de formation professionnelle. Compare la reponse du joueur avec la reponse attendue du DOCUMENT DE FORMATION.
 
 QUESTION: ${qa.question}
-REPONSE ATTENDUE: ${qa.expected_answer}
-MOTS-CLES ATTENDUS: ${qa.keywords.join(", ")}
+REPONSE ATTENDUE (issue du document): ${qa.expected_answer}
+MOTS-CLES DU DOCUMENT: ${qa.keywords.join(", ")}${sourceContext}
 
-CRITERES:
-- Le joueur doit mentionner au moins 1 mot-cle OU couvrir l'idee principale
-- Synonymes et reformulations sont acceptes
-- Une reponse partielle mais dans la bonne direction = correct
+CRITERES D'EVALUATION (bases UNIQUEMENT sur le contenu du document):
+- Le joueur doit mentionner au moins 1 mot-cle OU couvrir l'idee principale TELLE QUE DECRITE DANS LE DOCUMENT
+- Synonymes et reformulations sont acceptes, mais l'idee doit correspondre au document
+- Une reponse partielle mais dans la bonne direction (selon le document) = correct
+- Une reponse basee sur des connaissances generales mais qui ne correspond PAS au document = incorrect
 - Hors sujet ou contraire a la reponse attendue = incorrect
 
 JSON strict uniquement:
@@ -384,6 +390,8 @@ export async function POST(req: NextRequest) {
   let switchToAgentId = "";
   let shouldAdvanceAct = false;
   let simulationComplete = false;
+  // Track whether the active agent is the learning agent for model selection
+  const isLearningAgentActive = activeAgentState.agent.id === "learning_agent";
 
   if (!gamePlan || !interactionState || !currentQA) {
     // Fallback: no game plan, just have the agent talk
@@ -406,11 +414,17 @@ export async function POST(req: NextRequest) {
         agentPrompt = `Tres bien, le joueur a compris ! Dis-lui brievement que c'est bon et que tu le repasses a ${catAgent.name} pour la suite. Exemple: "Parfait ! Je vous repasse ${catAgent.name}." 10 mots max.`;
       }
     } else if (isKickoff) {
-      // Learning agent kickoff — explain the answer
-      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse est: "${currentQA.expected_answer}". Explique pourquoi brievement. Termine par "Compris ?" ou equivalent. 20 mots max.`;
+      // Learning agent kickoff — explain the answer grounded in the document
+      const sourceRef = currentQA.source_excerpt
+        ? `\n\nEXTRAIT DU DOCUMENT SOURCE: "${currentQA.source_excerpt}"\n\nBase ton explication UNIQUEMENT sur cet extrait du document. Ne donne pas d'information qui n'est pas dans le document.`
+        : "";
+      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique pourquoi brievement en citant le document. Termine par "Compris ?" ou equivalent. 20 mots max.`;
     } else {
       // Player said something but didn't confirm — continue explaining
-      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication brievement. Redemande s'il a compris. 15 mots max.`;
+      const sourceRef = currentQA.source_excerpt
+        ? ` Rappel — le document dit: "${currentQA.source_excerpt}".`
+        : "";
+      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication brievement en te basant sur le document.${sourceRef} Redemande s'il a compris. 15 mots max.`;
     }
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
@@ -615,38 +629,41 @@ export async function POST(req: NextRequest) {
 
   const currentEmotion = activeAgentState.emotion || "calm";
   const emotionInstruction = {
-    calm:       "Ton calme, posé, confiant, professionnel.",
-    stressed:   "Ton stressé: phrases courtes, légèrement hésitant, rythme rapide.",
+    calm:       "Ton calme, pose, confiant, professionnel.",
+    stressed:   "Ton stresse: phrases courtes, legerement hesitant, rythme rapide.",
     angry:      "Ton ferme et direct, peu de politesse, tension perceptible.",
-    panicked:   "Ton paniqué: phrases décousues, exclamations, urgence extrême.",
-    suspicious: "Ton lent et méfiant, questions courtes, peu de confiance.",
+    panicked:   "Ton panique: phrases decousues, exclamations, urgence extreme.",
+    suspicious: "Ton lent et mefiant, questions courtes, peu de confiance.",
   }[currentEmotion] ?? "Ton professionnel.";
 
-  const messages = [
-    { role: "system" as const, content: activeAgentState.systemPrompt },
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: activeAgentState.systemPrompt },
     {
-      role: "system" as const,
-      content: `ÉTAT ÉMOTIONNEL ACTUEL: ${currentEmotion.toUpperCase()} — ${emotionInstruction} Adapte IMPÉRATIVEMENT ton style à cet état.`,
+      role: "system",
+      content: `ETAT EMOTIONNEL ACTUEL: ${currentEmotion.toUpperCase()} — ${emotionInstruction} Adapte IMPERATIVEMENT ton style a cet etat.`,
     },
     {
-      role: "system" as const,
+      role: "system",
       content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
     },
-    ...safeHistory.map((m) => ({ role: m.role, content: m.content })),
-    { role: "system" as const, content: agentPrompt },
+    ...safeHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    { role: "system", content: agentPrompt },
     {
-      role: "user" as const,
+      role: "user",
       content: isKickoff
         ? "A toi de jouer."
         : safePlayerMessage || "...",
     },
   ];
 
-  const textResult = streamText({
-    model: vercelMistral("mistral-large-latest"),
-    messages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "") })),
+  // Use gpt-4.1-mini for learning agent (pedagogy, off real-time), gpt-4.1-nano for narrator/client
+  const streamModel = isLearningAgentActive ? MODEL_MINI : MODEL_NANO;
+
+  const textStream = streamChatCompletion({
+    model: streamModel,
+    messages,
     temperature: 0.5,
-    maxOutputTokens: 150,
+    maxTokens: 150,
   });
 
   const encoder = new TextEncoder();
@@ -714,8 +731,11 @@ export async function POST(req: NextRequest) {
       let tokenEventCount = 0;
 
       try {
-        for await (const delta of textResult.textStream) {
-          const rawDelta = String(delta || "");
+        const reader = textStream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const rawDelta = String(value || "");
           if (!rawDelta) continue;
           streamedRaw += rawDelta;
 
