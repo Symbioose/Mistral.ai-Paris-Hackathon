@@ -1,7 +1,7 @@
 import { MultiAgentGameState } from "@/app/lib/types";
 import { chatCompletion } from "@/app/lib/agents/openai-client";
 
-const EVALUATION_MODEL = "gpt-4.1-nano";
+const EVALUATION_MODEL = "gpt-4.1-mini";
 
 export interface EvaluationUpdate {
   score_updates: Array<{ topic: string; delta: number; reason: string }>;

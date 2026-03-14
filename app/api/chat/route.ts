@@ -8,8 +8,7 @@ import {
   emotionToPromptInstruction,
 } from "@/app/lib/emotion-engine";
 
-const MODEL_NANO = "gpt-4.1-nano";
-const MODEL_MINI = "gpt-4.1-mini";
+const MODEL = "gpt-4.1-mini";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,28 +54,7 @@ function sanitizeNarrative(text: string): string {
   );
 }
 
-/**
- * Parse [NARRATOR]...[/NARRATOR] tags from LLM output.
- * Returns { narrator, dialogue } where dialogue is everything outside the tags.
- */
-function parseNarratorTags(text: string): { narrator?: string; dialogue: string } {
-  const narratorRegex = /\[NARRATOR\]([\s\S]*?)\[\/NARRATOR\]/gi;
-  const narratorParts: string[] = [];
-  let dialogue = text;
 
-  let match: RegExpExecArray | null;
-  while ((match = narratorRegex.exec(text)) !== null) {
-    narratorParts.push(match[1].trim());
-  }
-
-  // Remove narrator tags from text to get dialogue
-  dialogue = text.replace(narratorRegex, "").trim();
-
-  return {
-    narrator: narratorParts.length > 0 ? narratorParts.join(" ") : undefined,
-    dialogue: dialogue || text,
-  };
-}
 
 const CONFIRM_REGEX =
   /\b(ok|compris|d'accord|oui|je comprends|c'est bon|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|go|allons-y|on continue)\b/i;
@@ -150,7 +128,7 @@ async function evaluateAnswer(
       : "";
 
     const message = await chatCompletion({
-      model: MODEL_NANO,
+      model: MODEL,
       messages: [
         {
           role: "system",
@@ -245,8 +223,6 @@ export async function POST(req: NextRequest) {
   let switchToAgentId = "";
   let shouldAdvanceAct = false;
   let simulationComplete = false;
-  // Track whether the active agent is the learning agent for model selection
-  const isLearningAgentActive = activeAgentState.agent.id === "learning_agent";
   let speakerType: "narrator" | "client" | "learning" = "client";
 
   if (!gamePlan || !interactionState || !currentQA) {
@@ -291,13 +267,10 @@ export async function POST(req: NextRequest) {
     const isFirst = gameState.conversationHistory.length === 0;
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
 
-    // For kickoffs, optionally include narrator scene-setting
-    const narratorInstruction = "Tu peux commencer par une courte didascalie entre [NARRATOR]...[/NARRATOR] pour poser la scene (optionnel, 10 mots max).";
-
     if (isFirst) {
-      agentPrompt = `${situation}\n${narratorInstruction}\nTu commences la simulation. Joue la scene ci-dessus, presente-toi tres brievement (1 phrase), puis pose cette question naturellement: "${currentQA.question}". 25 mots max hors didascalie. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nTu commences la simulation. Joue la scene ci-dessus, presente-toi tres brievement (1 phrase), puis pose cette question naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
     } else {
-      agentPrompt = `${situation}\n${narratorInstruction}\nJoue la scene ci-dessus dans ton style puis pose naturellement: "${currentQA.question}". 25 mots max hors didascalie. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nJoue la scene ci-dessus dans ton style puis pose naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
     }
   } else {
     // ASKING or RE_ASKING — player answered, evaluate
@@ -518,8 +491,6 @@ export async function POST(req: NextRequest) {
     ? `\nNOTES INTERNES recues de tes collegues:\n${sharedMemoryNotes.map((n: SharedMemoryNote) => `- [${n.priority.toUpperCase()}] ${n.fromAgent}: "${n.note}"`).join("\n")}\nUtilise ces notes pour adapter ton comportement.`
     : "";
 
-  const narratorTagInstruction = "Si tu veux poser la scene, utilise [NARRATOR]texte de narration[/NARRATOR] avant tes paroles. Le narrateur est une voix off neutre. Tes paroles doivent etre en dehors de ces balises.";
-
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: activeAgentState.systemPrompt },
     {
@@ -528,7 +499,7 @@ export async function POST(req: NextRequest) {
     },
     {
       role: "system",
-      content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. ${narratorTagInstruction} Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
+      content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons et didascalies (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
     },
     ...safeHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "system", content: agentPrompt },
@@ -540,8 +511,7 @@ export async function POST(req: NextRequest) {
     },
   ];
 
-  // Use gpt-4.1-mini for learning agent (pedagogy, off real-time), gpt-4.1-nano for narrator/client
-  const streamModel = isLearningAgentActive ? MODEL_MINI : MODEL_NANO;
+  const streamModel = MODEL;
 
   const textStream = streamChatCompletion({
     model: streamModel,
@@ -597,9 +567,6 @@ export async function POST(req: NextRequest) {
       const content = sanitizeNarrative(streamedRaw.trim()) || "Situation critique. Votre decision ?";
       const normalizedFinal = content.replace(/\s+/g, " ").trim();
 
-      // Parse narrator tags from the final content
-      const { narrator, dialogue } = parseNarratorTags(normalizedFinal);
-
       // Synthesize tokens if streaming produced nothing
       if (tokenEventCount === 0 && normalizedFinal) {
         const words = normalizedFinal.split(" ");
@@ -621,22 +588,6 @@ export async function POST(req: NextRequest) {
           trajectory: currentEmotion.trajectory,
           reason: currentEmotion.reason,
         },
-        narrator,
-        dialogue,
-        speakerType,
-      });
-
-      // Final meta event (backwards compatible)
-      send({
-        type: "meta",
-        patch,
-        emotion: {
-          current: currentEmotion.current,
-          intensity: currentEmotion.intensity,
-          trajectory: currentEmotion.trajectory,
-          reason: currentEmotion.reason,
-        },
-        narrator,
         speakerType,
       });
 

@@ -516,8 +516,7 @@ export default function Home() {
       let ttsBuffer = "";
       const suppressCurrentTurnOutput = false;
 
-      // Track whether narrator text from meta has been enqueued for TTS
-      let narratorTextEnqueued = false;
+      // (narrator text is now handled inline by splitTtsByStageDirections during streaming)
 
       const handleSseBlock = (block: string) => {
         const dataMatch = block.match(/^data: (.+)$/m);
@@ -561,11 +560,6 @@ export default function Home() {
             if (event.speakerType) {
               setSpeakerType(event.speakerType === "narrator" ? "narrator" : "npc");
             }
-            // Narrator text: play with calm_narrator voice before dialogue
-            if (event.narrator && typeof event.narrator === "string" && event.narrator.trim()) {
-              narratorTextEnqueued = true;
-              enqueueTtsSegment(event.narrator.trim(), "calm_narrator", "calm", currentTtsGeneration);
-            }
           } else if (event.type === "token") {
             if (suppressCurrentTurnOutput) return;
             const tokenText = String(event.content || "");
@@ -581,18 +575,9 @@ export default function Home() {
             const parsed = extractPlayableChunks(ttsBuffer);
             ttsBuffer = parsed.remainder;
             for (const chunk of parsed.chunks) {
-              // When narrator text came via meta event, skip asterisk parsing for dialogue
-              // (narrator already enqueued separately) — route directly with client voice.
-              if (narratorTextEnqueued) {
-                const clean = normalizeTtsText(chunk);
-                if (clean) {
-                  enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
-                }
-              } else {
-                const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
-                for (const segment of routedSegments) {
-                  enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
-                }
+              const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
+              for (const segment of routedSegments) {
+                enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
               }
             }
 
@@ -629,16 +614,9 @@ export default function Home() {
       }
 
       if (!suppressCurrentTurnOutput && ttsBuffer.trim()) {
-        if (narratorTextEnqueued) {
-          const clean = normalizeTtsText(ttsBuffer.trim());
-          if (clean) {
-            enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
-          }
-        } else {
-          const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
-          for (const segment of routedSegments) {
-            enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
-          }
+        const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
+        for (const segment of routedSegments) {
+          enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
         }
       }
 
