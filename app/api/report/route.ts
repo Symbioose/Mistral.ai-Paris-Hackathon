@@ -262,7 +262,12 @@ function sanitizeReport(raw: unknown, fallback: SimulationReport): SimulationRep
 export async function POST(req: NextRequest) {
   let fallbackFromPayload: SimulationReport | null = null;
   try {
-    const body = (await req.json()) as ReportRequest;
+    let body: ReportRequest;
+    try {
+      body = (await req.json()) as ReportRequest;
+    } catch {
+      return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
     const gameState = body?.gameState;
 
     if (!gameState || !Array.isArray(gameState.scores)) {
@@ -360,7 +365,12 @@ Contraintes STRICTES:
     });
 
     const raw = String(message.content || "").trim();
-    const parsed = raw ? JSON.parse(raw) : null;
+    let parsed: unknown = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      console.warn("[report] Failed to parse OpenAI JSON response, using fallback.");
+    }
     const report = sanitizeReport(parsed, fallback);
 
     return Response.json({ report });

@@ -172,9 +172,15 @@ JSON strict uniquement:
         feedback: matched.length >= 1 ? "Mots-cles detectes" : "Aucun mot-cle trouve",
       };
     }
-  } catch {
-    // On error, be generous
-    return { correct: true, feedback: "Evaluation indisponible" };
+  } catch (err) {
+    // On API error, fall back to keyword matching rather than auto-passing
+    console.error("[evaluateAnswer] API error, falling back to keyword match:", err);
+    const lower = playerMessage.toLowerCase();
+    const matched = qa.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+    return {
+      correct: matched.length >= 1,
+      feedback: matched.length >= 1 ? "Mots-cles detectes (mode secours)" : "Evaluation indisponible — aucun mot-cle trouve",
+    };
   }
 }
 
@@ -183,13 +189,24 @@ JSON strict uniquement:
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
-  const { playerMessage, gameState, kickoff } = (await req.json()) as {
+  let body: { playerMessage?: string; gameState?: MultiAgentGameState; kickoff?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const { playerMessage, gameState, kickoff } = body as {
     playerMessage?: string;
     gameState: MultiAgentGameState;
     kickoff?: boolean;
   };
 
-  const safePlayerMessage = String(playerMessage || "").trim();
+  if (!gameState || !Array.isArray(gameState.agents) || !gameState.scenario) {
+    return Response.json({ error: "Invalid gameState: missing required fields." }, { status: 400 });
+  }
+
+  const safePlayerMessage = String(playerMessage || "").trim().slice(0, 2000);
   const isKickoff = Boolean(kickoff);
   const { gamePlan, interactionState } = gameState;
 

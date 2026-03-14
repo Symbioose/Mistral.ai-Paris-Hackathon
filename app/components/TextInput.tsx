@@ -29,6 +29,7 @@ export default function TextInput({ onSubmit, disabled }: TextInputProps) {
           onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
           disabled={disabled}
           placeholder="Que fais-tu ?"
+          aria-label="Saisir votre réponse"
           className="
             flex-1 px-4 py-2.5 rounded-lg
             bg-zinc-900/80 backdrop-blur
@@ -42,6 +43,7 @@ export default function TextInput({ onSubmit, disabled }: TextInputProps) {
         <button
           onClick={handleSubmit}
           disabled={disabled || !text.trim()}
+          aria-label="Envoyer la réponse"
           className="
             px-4 py-2.5 rounded-lg font-mono text-sm uppercase tracking-wider
             bg-cyan-500/10 border border-cyan-500/30 text-cyan-300

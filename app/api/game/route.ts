@@ -14,8 +14,17 @@ import {
   retrieveRelevantChunks,
 } from "@/app/lib/rag";
 
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
+function getMistralApiKey(): string {
+  const key = process.env.MISTRAL_API_KEY;
+  if (!key) throw new Error("MISTRAL_API_KEY not configured");
+  return key;
+}
+
+function getElevenLabsApiKey(): string {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY not configured");
+  return key;
+}
 
 const MISTRAL_TIMEOUT_MS = 14000;
 const ELEVENLABS_TIMEOUT_MS = 10000;
@@ -90,8 +99,22 @@ interface ParseResult {
   actions: GameAction[];
 }
 
+// WARNING: In-memory stores — data is lost on redeploy and not shared across
+// serverless instances. Acceptable for a single-instance demo; for production
+// at scale, replace with Redis or a database.
+const MAX_SESSIONS = 200;
 const conversationHistory = new Map<string, Array<{ role: "user" | "assistant"; content: string }>>();
 const sessionStore = new Map<string, SessionState>();
+
+function evictOldestSessions() {
+  if (sessionStore.size > MAX_SESSIONS) {
+    const oldest = sessionStore.keys().next().value;
+    if (oldest) {
+      sessionStore.delete(oldest);
+      conversationHistory.delete(oldest);
+    }
+  }
+}
 
 const SCENARIO_TOOLS = [
   {
@@ -257,7 +280,7 @@ async function callMistral(
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${MISTRAL_API_KEY}`,
+        Authorization: `Bearer ${getMistralApiKey()}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -289,6 +312,8 @@ async function callMistral(
 function ensureSessionState(sessionId: string): SessionState {
   const existing = sessionStore.get(sessionId);
   if (existing) return existing;
+
+  evictOldestSessions();
 
   const initial: SessionState = {
     documentHash: null,
@@ -830,7 +855,7 @@ async function generateSpeech(text: string, speakerType: "narrator" | "npc"): Pr
       {
         method: "POST",
         headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
+          "xi-api-key": getElevenLabsApiKey(),
           "Content-Type": "application/json",
           Accept: "audio/mpeg",
         },

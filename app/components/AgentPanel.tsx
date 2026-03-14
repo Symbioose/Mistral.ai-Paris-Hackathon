@@ -339,7 +339,7 @@ export default function AgentPanel({
                     display: "flex",
                     gap: 8,
                     alignItems: "flex-start",
-                    opacity: isLatest ? 1 : 0.45 - idx * 0.06,
+                    opacity: isLatest ? 1 : Math.max(0.15, 0.45 - idx * 0.06),
                   }}
                 >
                   <span

@@ -30,7 +30,7 @@ function RadarChart({ scores }: { scores: Array<{ topic: string; score: number; 
     .join(" ") + "Z";
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+    <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Diagramme radar des competences" style={{ width: "100%", maxWidth: size, height: "auto" }}>
       {/* Grid rings */}
       {[0.25, 0.5, 0.75, 1].map((pct) => (
         <path key={pct} d={poly(pct * maxR)} fill="none" stroke="var(--corp-border)" strokeOpacity={0.4} strokeWidth={pct === 1 ? 1 : 0.5} />
@@ -183,7 +183,7 @@ export default function SkillsReportDashboard({
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
 
         {/* ── HEADER ── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 32 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
           <div>
             <p style={{
               fontFamily: "var(--corp-font-body)",
@@ -380,7 +380,7 @@ export default function SkillsReportDashboard({
 
         {/* ── RADAR + SCORE TABLE ── */}
         {useMultiAgent && scores.length >= 3 && (
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 20, marginBottom: 24 }}>
 
             {/* Radar Chart */}
             <div style={{
@@ -513,7 +513,7 @@ export default function SkillsReportDashboard({
 
         {/* ── FAILURE PATTERNS + EMPLOYEE VIBE ── */}
         {(failurePatterns.length > 0 || employeeVibe) && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 24 }}>
 
             {/* Failure Pattern Analysis */}
             <section style={{
@@ -637,7 +637,7 @@ export default function SkillsReportDashboard({
 
         {/* ── AUTO-ANALYSIS ── */}
         {useMultiAgent && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 24 }}>
 
             {/* Weaknesses */}
             <section style={{
@@ -850,7 +850,7 @@ export default function SkillsReportDashboard({
             }}>
               Plan de remediation immediat
             </h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
               {actionPlan7Days.slice(0, 3).map((item, idx) => (
                 <div key={`${idx}-${item.slice(0, 12)}`} style={{
                   background: "var(--corp-bg-subtle)",

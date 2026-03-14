@@ -476,6 +476,12 @@ export async function prepareGamePlan(
     const t1 = Date.now();
     const qaPairs = await generateQAPairs(documentText);
     console.log(`[prepare] Step 1 done in ${Date.now() - t1}ms — ${qaPairs.length} Q&A pairs`);
+    // Validate grounding: warn about Q&As with empty source_excerpt
+    const ungrounded = qaPairs.filter((qa) => !qa.source_excerpt);
+    if (ungrounded.length > 0) {
+      console.warn(`[prepare] ${ungrounded.length}/${qaPairs.length} Q&A(s) have empty source_excerpt (grounding not enforced by LLM): ${ungrounded.map((q) => q.id).join(", ")}`);
+    }
+
     status(`${qaPairs.length} questions generees — validation en cours...`);
 
     // Step 2: Categorize
@@ -495,13 +501,18 @@ export async function prepareGamePlan(
     }
 
     // Assign uncategorized Q&As to the first category
+    const orphanedQAs: string[] = [];
     for (const qa of qaPairs) {
       if (!qa.categoryId && categories.length > 0) {
         qa.categoryId = categories[0].id;
         if (!categories[0].qaPairIds.includes(qa.id)) {
           categories[0].qaPairIds.push(qa.id);
         }
+        orphanedQAs.push(qa.id);
       }
+    }
+    if (orphanedQAs.length > 0) {
+      console.warn(`[prepare] ${orphanedQAs.length} Q&A(s) were not categorized by LLM, assigned to "${categories[0].name}": ${orphanedQAs.join(", ")}`);
     }
 
     // Step 3: Generate agents + scenario

@@ -75,6 +75,8 @@ export default function EmotionIndicator({ emotion, agentName }: EmotionIndicato
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 8 }}
         transition={{ duration: 0.25 }}
+
+        aria-label={`${agentName}: ${label}, intensité ${fillPercent}%`}
         style={{
           display: "flex",
           alignItems: "center",

@@ -185,7 +185,7 @@ export default function AgentGenerationView({ documentText, filename, onReady }:
         </AnimatePresence>
 
         {/* SVG Graph */}
-        <div style={{ position: "relative", width: W, height: H, maxWidth: "100%", maxHeight: "100%" }}>
+        <div style={{ position: "relative", width: W, height: H, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 200px)", aspectRatio: `${W}/${H}` }}>
           {/* SVG layer — always behind cards */}
           <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
           <svg
@@ -375,8 +375,19 @@ export default function AgentGenerationView({ documentText, filename, onReady }:
             </div>
           )}
           {error && (
-            <div style={{ background: "rgba(220,38,38,0.08)", padding: "6px 14px", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8 }}>
+            <div role="alert" style={{ background: "rgba(220,38,38,0.08)", padding: "6px 14px", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}>
               <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "#DC2626", margin: 0 }}>{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  fontFamily: "var(--corp-font-body)", fontSize: 11, fontWeight: 600,
+                  padding: "4px 12px", background: "rgba(220,38,38,0.15)", color: "#DC2626",
+                  border: "1px solid rgba(220,38,38,0.3)", borderRadius: 6, cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Reessayer
+              </button>
             </div>
           )}
           {!isReady && !error && (

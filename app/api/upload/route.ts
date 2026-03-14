@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const MAX_CHARS = 12000; // ~3000 tokens — safe for Mistral context
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,6 +10,13 @@ export async function POST(request: NextRequest) {
 
     if (!file) {
       return NextResponse.json({ error: "Aucun fichier reçu." }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `Fichier trop volumineux (max ${MAX_FILE_SIZE / 1024 / 1024} Mo).` },
+        { status: 413 },
+      );
     }
 
     const filename = file.name.toLowerCase();

@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { AgentEmotion, VoiceType } from "@/app/lib/types";
 import { EMOTION_PARAMS, VOICE_MAP } from "@/app/lib/voice/voices";
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5";
 const FIXED_NARRATOR_VOICE_ID =
   process.env.ELEVENLABS_VOICE_NARRATOR_FIXED ||
@@ -53,7 +52,19 @@ function sleep(ms: number) {
 }
 
 export async function POST(req: NextRequest) {
-  const { text, voice_id, voice_type, emotion } = await req.json() as {
+  const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+  if (!ELEVENLABS_API_KEY) {
+    return Response.json({ error: "ELEVENLABS_API_KEY not configured." }, { status: 500 });
+  }
+
+  let body: { text?: string; voice_id?: string; voice_type?: VoiceType; emotion?: AgentEmotion };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const { text, voice_id, voice_type, emotion } = body as {
     text: string;
     voice_id?: string;
     voice_type?: VoiceType;
@@ -65,14 +76,24 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Text is empty." }, { status: 400 });
   }
 
+  // Limit TTS text length to prevent abuse
+  const MAX_TTS_LENGTH = 1000;
+  const truncatedText = cleanText.length > MAX_TTS_LENGTH ? cleanText.slice(0, MAX_TTS_LENGTH) : cleanText;
+
   const resolvedVoice =
     voice_type === "calm_narrator"
       ? FIXED_NARRATOR_VOICE_ID
       : (voice_id || (voice_type ? VOICE_MAP[voice_type] : VOICE_MAP.calm_narrator));
-  const params = EMOTION_PARAMS[emotion || "calm"];
+
+  // Validate voice ID to prevent URL injection (must be alphanumeric ElevenLabs ID)
+  if (!resolvedVoice || !/^[a-zA-Z0-9]{10,30}$/.test(resolvedVoice)) {
+    return Response.json({ error: "Invalid voice ID." }, { status: 400 });
+  }
+
+  const params = EMOTION_PARAMS[emotion || "calm"] || EMOTION_PARAMS.calm;
 
   const payload = JSON.stringify({
-    text: cleanText,
+    text: truncatedText,
     model_id: ELEVENLABS_MODEL_ID,
     voice_settings: {
       stability: params.stability,

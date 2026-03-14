@@ -96,6 +96,7 @@ function extractPlayableChunks(
       const next = window[i + 1] || "";
       if (/[.!?]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
         cut = i + 1;
+        break; // Take the first sentence boundary, not the last
       }
     }
 
@@ -105,6 +106,7 @@ function extractPlayableChunks(
         const next = window[i + 1] || "";
         if (/[,;:]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
           cut = i + 1;
+          break; // Take the first clause boundary, not the last
         }
       }
     }
@@ -197,6 +199,7 @@ export default function Home() {
   const ttsGenerationRef = useRef(0);
   const ttsChunkSeqRef = useRef(0);
   const ttsPreloadRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const feedSeqRef = useRef(0);
 
   // Emotion visual feedback state (from backend meta events)
   const [emotionState, setEmotionState] = useState<EmotionState>({
@@ -240,11 +243,22 @@ export default function Home() {
   const prevTotalScoreRef = useRef<number>(50);
 
 
+  // Guard: prevent auto-kickoff from firing twice for the same state.
+  const autoKickoffFiredRef = useRef<string | null>(null);
+
   // Auto-kickoff: when a switch is scheduled and loading finishes, trigger the new agent's intro.
   // If TTS is still playing, defer to processTtsQueue via autoKickoffCallbackRef.
   useEffect(() => {
     if (!autoKickoffStateRef.current || isLoading) return;
     const kickoffState = autoKickoffStateRef.current;
+
+    // Prevent double-fire: skip if we already kicked off for this exact agent+act combo.
+    const kickoffKey = `${kickoffState.activeAgentId}_${kickoffState.currentAct}_${kickoffState.interactionState?.currentQAIndex}`;
+    if (autoKickoffFiredRef.current === kickoffKey) {
+      autoKickoffStateRef.current = null;
+      return;
+    }
+    autoKickoffFiredRef.current = kickoffKey;
     autoKickoffStateRef.current = null;
 
     // Start API call immediately — don't wait for TTS to finish.
@@ -279,7 +293,14 @@ export default function Home() {
 
   const playAudio = useCallback((b64: string) => {
     if (isRecordingRef.current) return;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current = null;
+    }
     const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
     audioRef.current = audio;
     audio.play().catch((e) => console.warn("Audio blocked:", e));
@@ -350,7 +371,11 @@ export default function Home() {
         const audioUrl = await getOrCreateTtsPromise(currentChunk);
         if (audioUrl) {
           if (audioRef.current) {
+            audioRef.current.onended = null;
+            audioRef.current.onerror = null;
+            audioRef.current.onpause = null;
             audioRef.current.pause();
+            audioRef.current.removeAttribute("src");
             audioRef.current = null;
           }
           const audio = new Audio(audioUrl);
@@ -361,6 +386,11 @@ export default function Home() {
             const finish = () => {
               if (settled) return;
               settled = true;
+              // Clean up listeners to prevent leaks
+              audio.onended = null;
+              audio.onerror = null;
+              audio.onpause = null;
+              audio.removeAttribute("src");
               URL.revokeObjectURL(audioUrl);
               resolve();
             };
@@ -476,7 +506,11 @@ export default function Home() {
       ttsQueueRef.current = [];
       ttsPreloadRef.current.clear();
       if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onpause = null;
         audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
         audioRef.current = null;
       }
 
@@ -491,6 +525,7 @@ export default function Home() {
         conversationHistory: updatedHistory,
       };
 
+      const abortController = new AbortController();
       const res = options?.prefetchedResponse
         ? await options.prefetchedResponse
         : await fetch("/api/chat", {
@@ -501,6 +536,7 @@ export default function Home() {
               gameState: stateToSend,
               kickoff: isKickoff,
             }),
+            signal: abortController.signal,
           });
 
       if (!res.ok || !res.body) {
@@ -519,11 +555,14 @@ export default function Home() {
       // (narrator text is now handled inline by splitTtsByStageDirections during streaming)
 
       const handleSseBlock = (block: string) => {
-        const dataMatch = block.match(/^data: (.+)$/m);
-        if (!dataMatch) return;
+        // Support multi-line data fields: concatenate all `data:` lines in the block
+        const dataLines = block.split("\n").filter((l) => l.startsWith("data: "));
+        if (dataLines.length === 0) return;
+        const dataPayload = dataLines.map((l) => l.slice(6)).join("");
+        if (!dataPayload) return;
 
         try {
-          const event = JSON.parse(dataMatch[1]);
+          const event = JSON.parse(dataPayload);
 
           if (event.type === "meta") {
             activePatch = event.patch || {};
@@ -654,6 +693,10 @@ export default function Home() {
       const nextInteractionState =
         (activePatch.interactionState as InteractionState | undefined) || baseState.interactionState;
 
+      // Propagate emotionState from patch so it persists across turns
+      const nextEmotionState =
+        (activePatch.emotionState as MultiAgentGameState["emotionState"] | undefined) || baseState.emotionState;
+
       const computedNextState: MultiAgentGameState = {
         ...baseState,
         agents: nextAgents,
@@ -667,6 +710,7 @@ export default function Home() {
         conversationHistory: nextConversationHistory,
         gamePlan: baseState.gamePlan,
         interactionState: nextInteractionState,
+        emotionState: nextEmotionState,
       };
 
       // Also propagate sharedMemory from patch
@@ -686,7 +730,7 @@ export default function Home() {
         for (const tc of toolCallsList) {
           if (tc.name === "update_emotion") {
             newFeedItems.push({
-              id: `feed_emo_${Date.now()}`,
+              id: `feed_emo_${++feedSeqRef.current}`,
               type: "emotion_change",
               timestamp: Date.now(),
               agentName: speakingAgentName,
@@ -695,7 +739,7 @@ export default function Home() {
             });
           } else if (tc.name === "trigger_event") {
             newFeedItems.push({
-              id: `feed_evt_${Date.now()}`,
+              id: `feed_evt_${++feedSeqRef.current}`,
               type: "event_triggered",
               timestamp: Date.now(),
               eventType: String(tc.args.event_type || ""),
@@ -703,7 +747,7 @@ export default function Home() {
             });
           } else if (tc.name === "agent_note") {
             newFeedItems.push({
-              id: `feed_note_${Date.now()}`,
+              id: `feed_note_${++feedSeqRef.current}`,
               type: "agent_note",
               timestamp: Date.now(),
               fromAgent: speakingAgentName,
@@ -751,7 +795,7 @@ export default function Home() {
         setGameEvents((prev) => [
           ...prev,
           {
-            id: `evt_${Date.now()}`,
+            id: `evt_${++feedSeqRef.current}`,
             type: String((activePatch as Record<string, unknown>).eventType || "crisis"),
             description: latestEvent,
           },
@@ -796,7 +840,7 @@ export default function Home() {
         const switchedToAgent = baseState.agents.find((a) => a.agent.id === nextActiveId);
         // Feed: agent switch
         setMissionFeedItems((prev) => [...prev, {
-          id: `feed_switch_${Date.now()}`,
+          id: `feed_switch_${++feedSeqRef.current}`,
           type: "agent_switch" as const,
           timestamp: Date.now(),
           fromAgent: speakingAgentName,
@@ -807,7 +851,7 @@ export default function Home() {
           setGameEvents((prev) => [
             ...prev,
             {
-              id: `switch_${Date.now()}`,
+              id: `switch_${++feedSeqRef.current}`,
               type: learningMode ? "learning" : "new_character",
               description: switchReason,
             },
@@ -821,10 +865,16 @@ export default function Home() {
     } catch (e) {
       console.error("Multi-agent chat error:", e);
       setGameState((prev) => ({ ...prev, dialogue: "Connexion perdue. Réessayez." }));
+      // On error, signal player can act again since no TTS will play
+      setIsPlayerTurn(true);
     } finally {
       setIsLoading(false);
     }
   }, [multiAgentState, enqueueTtsSegment]);
+
+  // Keep a ref to the latest gameState for use in callbacks that shouldn't re-create on every render.
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
 
   // ====== LEGACY SINGLE-AGENT GAME ======
   const sendAction = useCallback(async (playerText: string) => {
@@ -835,13 +885,15 @@ export default function Home() {
 
     setIsLoading(true);
     try {
+      // Read from ref to avoid stale closure on gameState fields
+      const gs = gameStateRef.current;
       const res = await fetch("/api/game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           playerText,
-          turnCount: gameState.turnCount,
-          gameState: { hp: gameState.hp, maxHp: gameState.maxHp, currentStation: gameState.currentStation, inventory: gameState.inventory },
+          turnCount: gs.turnCount,
+          gameState: { hp: gs.hp, maxHp: gs.maxHp, currentStation: gs.currentStation, inventory: gs.inventory },
           sessionId: sessionIdRef.current,
           documentContext,
         }),
@@ -866,7 +918,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [multiAgentState, sendMultiAgentAction, gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, documentContext, applyActions, playAudio]);
+  }, [multiAgentState, sendMultiAgentAction, documentContext, applyActions, playAudio]);
 
   const startGame = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
@@ -1003,10 +1055,20 @@ export default function Home() {
   const handleFinishSimulation = useCallback(() => {
     const run = async () => {
       if (isGeneratingManagerReport) return;
+      // Stop all audio and TTS
       if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onpause = null;
         audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
         audioRef.current = null;
       }
+      ttsGenerationRef.current += 1;
+      ttsQueueRef.current = [];
+      ttsPreloadRef.current.clear();
+      isTtsPlayingRef.current = false;
+      autoKickoffCallbackRef.current = null;
 
       if (multiAgentState) {
         setIsGeneratingManagerReport(true);
@@ -1052,9 +1114,23 @@ export default function Home() {
 
   const handleRestartSimulation = useCallback(() => {
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
       audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
       audioRef.current = null;
     }
+    // Clear TTS pipeline completely
+    ttsGenerationRef.current += 1;
+    ttsQueueRef.current = [];
+    ttsPreloadRef.current.clear();
+    isTtsPlayingRef.current = false;
+    autoKickoffCallbackRef.current = null;
+    autoKickoffStateRef.current = null;
+    autoKickoffFiredRef.current = null;
+    prefetchedResponseRef.current = null;
+
     sessionIdRef.current = crypto.randomUUID();
     setAssessments([]);
     setLatestReport(null);
@@ -1065,11 +1141,13 @@ export default function Home() {
     setDocumentContext(null);
     setDocumentFilename(null);
     setIsReportVisible(false);
+    setIsPlayerTurn(false);
     setMultiAgentState(null);
     setGameEvents([]);
     setMissionFeedItems([]);
     setActTransition(null);
     setSimulationEnd(null);
+    setLearningModeState({ active: false, message: "" });
     prevTotalScoreRef.current = 50;
   }, []);
 
@@ -2314,9 +2392,15 @@ export default function Home() {
                 isRecordingRef.current = isRecording;
                 if (isRecording) {
                   setIsPlayerTurn(false);
+                  // Cancel any pending auto-kickoff — the user is speaking now
+                  autoKickoffCallbackRef.current = null;
                 }
                 if (isRecording && audioRef.current) {
+                  audioRef.current.onended = null;
+                  audioRef.current.onerror = null;
+                  audioRef.current.onpause = null;
                   audioRef.current.pause();
+                  audioRef.current.removeAttribute("src");
                   audioRef.current = null;
                 }
                 if (isRecording) {

@@ -1,3 +1,9 @@
+// ============================================
+// DEPRECATED: This evaluator is NOT currently used.
+// Evaluation is handled inline in /app/api/chat/route.ts via the Q&A state machine.
+// Kept for potential future use (e.g., post-game analytics).
+// ============================================
+
 import { MultiAgentGameState } from "@/app/lib/types";
 import { chatCompletion } from "@/app/lib/agents/openai-client";
 

@@ -133,9 +133,12 @@ export default function PushToTalk({
         )}
 
         <button
+          aria-label={isActive ? "Relacher pour envoyer" : "Maintenir pour parler"}
           onMouseDown={handleStart}
           onMouseUp={handleStop}
           onMouseLeave={() => isRecording && handleStop()}
+          onKeyDown={(e) => { if (e.key === " " && !isActive && !disabled) { e.preventDefault(); handleStart(); } }}
+          onKeyUp={(e) => { if (e.key === " " && isActive) { e.preventDefault(); handleStop(); } }}
           onTouchStart={(e) => {
             e.preventDefault();
             handleStart();

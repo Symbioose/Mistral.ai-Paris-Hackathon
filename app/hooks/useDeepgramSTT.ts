@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseDeepgramSTTOptions {
   language?: string;
@@ -134,7 +134,18 @@ export function useDeepgramSTT(
         }
       };
 
-      ws.onerror = (err) => console.error("[Deepgram] WebSocket error:", err);
+      ws.onerror = (err) => {
+        console.error("[Deepgram] WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        // If the WebSocket closes unexpectedly while recording, clean up state
+        if (mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current = null;
+        }
+        setIsRecording(false);
+      };
     },
     [language],
   );
@@ -155,6 +166,15 @@ export function useDeepgramSTT(
 
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+  }, []);
+
+  // Cleanup on unmount — stop everything if component unmounts while recording
+  const stopRecordingRef = useRef(stopRecording);
+  stopRecordingRef.current = stopRecording;
+  useEffect(() => {
+    return () => {
+      stopRecordingRef.current();
+    };
   }, []);
 
   return { isRecording, transcript, startRecordingWithStream, stopRecording };

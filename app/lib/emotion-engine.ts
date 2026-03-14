@@ -2,7 +2,7 @@
 // Deterministic Emotion Engine
 // ============================================
 // Replaces the parallel LLM orchestration call for emotion updates.
-// Pure algorithmic computation — no LLM calls, no latency, fully predictable.
+// Pure algorithmic computation — no LLM calls, no latency.
 
 import { EmotionState, EmotionEvent, EmotionType, AgentEmotion } from "@/app/lib/types";
 
@@ -35,7 +35,7 @@ export function computeNextEmotion(
       if (event.firstTry) {
         return {
           current: "pleased",
-          intensity: clampIntensity(0.3 + Math.random() * 0.2), // 0.3-0.5
+          intensity: 0.4,
           trajectory: "cooling",
           reason: "Bonne reponse du premier coup",
         };
