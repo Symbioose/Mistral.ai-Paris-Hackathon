@@ -90,6 +90,11 @@ export default function KnowledgeHeatmap({ scores, totalScore }: KnowledgeHeatma
 
       {/* Global bar */}
       <div
+        role="progressbar"
+        aria-valuenow={totalScore}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Score global: ${totalScore} sur 100`}
         style={{
           height: 6,
           background: "rgba(255,255,255,0.06)",

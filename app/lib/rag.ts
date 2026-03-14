@@ -79,6 +79,10 @@ function splitIntoChunks(text: string, chunkSize = 750, overlap = 120): Array<{ 
 }
 
 export function buildRagIndex(text: string): RagIndex {
+  if (!text || !text.trim()) {
+    return { chunks: [], docFreq: {}, avgChunkLength: 1 };
+  }
+
   const rawChunks = splitIntoChunks(text);
 
   const chunks: RagChunk[] = rawChunks.map((chunk, index) => {
@@ -135,7 +139,18 @@ function bm25Score(queryTokens: string[], chunk: RagChunk, index: RagIndex): num
 }
 
 export function retrieveRelevantChunks(index: RagIndex, query: string, topK = 4): RetrievedChunk[] {
+  if (index.chunks.length === 0) return [];
+
   const queryTokens = tokenize(query);
+
+  // If query produces no tokens (empty, all stop-words, single short word), return first chunks as fallback
+  if (queryTokens.length === 0) {
+    return index.chunks.slice(0, Math.max(topK, 1)).map((chunk) => ({
+      id: chunk.id,
+      text: chunk.text,
+      score: 0,
+    }));
+  }
 
   const scored = index.chunks
     .map((chunk) => ({ chunk, score: bm25Score(queryTokens, chunk, index) }))

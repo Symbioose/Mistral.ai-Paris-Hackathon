@@ -26,13 +26,22 @@ export default function EventNotification({ events }: EventNotificationProps) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   // Auto-dismiss each new notification after DISMISS_DELAY_MS.
+  // Also cap the dismissed Set to prevent unbounded growth in long sessions.
   useEffect(() => {
     if (events.length === 0) return;
     const latest = events[events.length - 1];
     if (dismissed.has(latest.id)) return;
 
     const timer = setTimeout(() => {
-      setDismissed((prev) => new Set([...prev, latest.id]));
+      setDismissed((prev) => {
+        const next = new Set([...prev, latest.id]);
+        // Cap at 100 entries to prevent memory growth
+        if (next.size > 100) {
+          const arr = [...next];
+          return new Set(arr.slice(arr.length - 50));
+        }
+        return next;
+      });
     }, DISMISS_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -48,6 +57,9 @@ export default function EventNotification({ events }: EventNotificationProps) {
 
   return (
     <div
+      role="log"
+      aria-live="polite"
+      aria-label="Notifications"
       style={{
         position: "absolute",
         // Horizontally centered in the left zone, vertically near top.
@@ -60,7 +72,7 @@ export default function EventNotification({ events }: EventNotificationProps) {
         gap: 8,
         pointerEvents: "none",
         minWidth: 320,
-        maxWidth: 480,
+        maxWidth: "min(480px, calc(100vw - 48px))",
       }}
     >
       {visible.map((event) => {

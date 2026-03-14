@@ -7,6 +7,7 @@ import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
 import PushToTalk from "@/app/components/PushToTalk";
+import TextInput from "@/app/components/TextInput";
 import FileUpload from "@/app/components/FileUpload";
 import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
 import AgentGenerationView from "@/app/components/AgentGenerationView";
@@ -18,6 +19,7 @@ import ObjectiveHUD from "@/app/components/ObjectiveHUD";
 import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
 import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
 import MissionFeed from "@/app/components/MissionFeed";
+import AgentTransitionOverlay from "@/app/components/AgentTransitionOverlay";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -96,6 +98,7 @@ function extractPlayableChunks(
       const next = window[i + 1] || "";
       if (/[.!?]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
         cut = i + 1;
+        break; // Take the first sentence boundary, not the last
       }
     }
 
@@ -105,6 +108,7 @@ function extractPlayableChunks(
         const next = window[i + 1] || "";
         if (/[,;:]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
           cut = i + 1;
+          break; // Take the first clause boundary, not the last
         }
       }
     }
@@ -197,6 +201,7 @@ export default function Home() {
   const ttsGenerationRef = useRef(0);
   const ttsChunkSeqRef = useRef(0);
   const ttsPreloadRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const feedSeqRef = useRef(0);
 
   // Emotion visual feedback state (from backend meta events)
   const [emotionState, setEmotionState] = useState<EmotionState>({
@@ -239,12 +244,39 @@ export default function Home() {
   } | null>(null);
   const prevTotalScoreRef = useRef<number>(50);
 
+  // ── Agent switch transition overlay ──
+  const [agentTransition, setAgentTransition] = useState<{ agent: import("@/app/lib/types").Agent } | null>(null);
+  const prevDisplayAgentIdRef = useRef<string>("");
+
+  // Detect agent switches and trigger the visual transition overlay.
+  useEffect(() => {
+    if (!displayActiveAgentId || displayActiveAgentId === prevDisplayAgentIdRef.current) return;
+    const isFirstAgent = prevDisplayAgentIdRef.current === "";
+    prevDisplayAgentIdRef.current = displayActiveAgentId;
+    // Skip transition for the very first agent (game start).
+    if (isFirstAgent) return;
+    const agentState = multiAgentState?.agents.find((a) => a.agent.id === displayActiveAgentId);
+    if (agentState) {
+      setAgentTransition({ agent: agentState.agent });
+    }
+  }, [displayActiveAgentId, multiAgentState]);
+
+  // Guard: prevent auto-kickoff from firing twice for the same state.
+  const autoKickoffFiredRef = useRef<string | null>(null);
 
   // Auto-kickoff: when a switch is scheduled and loading finishes, trigger the new agent's intro.
   // If TTS is still playing, defer to processTtsQueue via autoKickoffCallbackRef.
   useEffect(() => {
     if (!autoKickoffStateRef.current || isLoading) return;
     const kickoffState = autoKickoffStateRef.current;
+
+    // Prevent double-fire: skip if we already kicked off for this exact agent+act combo.
+    const kickoffKey = `${kickoffState.activeAgentId}_${kickoffState.currentAct}_${kickoffState.interactionState?.currentQAIndex}`;
+    if (autoKickoffFiredRef.current === kickoffKey) {
+      autoKickoffStateRef.current = null;
+      return;
+    }
+    autoKickoffFiredRef.current = kickoffKey;
     autoKickoffStateRef.current = null;
 
     // Start API call immediately — don't wait for TTS to finish.
@@ -279,7 +311,14 @@ export default function Home() {
 
   const playAudio = useCallback((b64: string) => {
     if (isRecordingRef.current) return;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current = null;
+    }
     const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
     audioRef.current = audio;
     audio.play().catch((e) => console.warn("Audio blocked:", e));
@@ -350,7 +389,11 @@ export default function Home() {
         const audioUrl = await getOrCreateTtsPromise(currentChunk);
         if (audioUrl) {
           if (audioRef.current) {
+            audioRef.current.onended = null;
+            audioRef.current.onerror = null;
+            audioRef.current.onpause = null;
             audioRef.current.pause();
+            audioRef.current.removeAttribute("src");
             audioRef.current = null;
           }
           const audio = new Audio(audioUrl);
@@ -361,6 +404,11 @@ export default function Home() {
             const finish = () => {
               if (settled) return;
               settled = true;
+              // Clean up listeners to prevent leaks
+              audio.onended = null;
+              audio.onerror = null;
+              audio.onpause = null;
+              audio.removeAttribute("src");
               URL.revokeObjectURL(audioUrl);
               resolve();
             };
@@ -476,7 +524,11 @@ export default function Home() {
       ttsQueueRef.current = [];
       ttsPreloadRef.current.clear();
       if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onpause = null;
         audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
         audioRef.current = null;
       }
 
@@ -491,6 +543,7 @@ export default function Home() {
         conversationHistory: updatedHistory,
       };
 
+      const abortController = new AbortController();
       const res = options?.prefetchedResponse
         ? await options.prefetchedResponse
         : await fetch("/api/chat", {
@@ -501,6 +554,7 @@ export default function Home() {
               gameState: stateToSend,
               kickoff: isKickoff,
             }),
+            signal: abortController.signal,
           });
 
       if (!res.ok || !res.body) {
@@ -516,15 +570,17 @@ export default function Home() {
       let ttsBuffer = "";
       const suppressCurrentTurnOutput = false;
 
-      // Track whether narrator text from meta has been enqueued for TTS
-      let narratorTextEnqueued = false;
+      // (narrator text is now handled inline by splitTtsByStageDirections during streaming)
 
       const handleSseBlock = (block: string) => {
-        const dataMatch = block.match(/^data: (.+)$/m);
-        if (!dataMatch) return;
+        // Support multi-line data fields: concatenate all `data:` lines in the block
+        const dataLines = block.split("\n").filter((l) => l.startsWith("data: "));
+        if (dataLines.length === 0) return;
+        const dataPayload = dataLines.map((l) => l.slice(6)).join("");
+        if (!dataPayload) return;
 
         try {
-          const event = JSON.parse(dataMatch[1]);
+          const event = JSON.parse(dataPayload);
 
           if (event.type === "meta") {
             activePatch = event.patch || {};
@@ -561,11 +617,6 @@ export default function Home() {
             if (event.speakerType) {
               setSpeakerType(event.speakerType === "narrator" ? "narrator" : "npc");
             }
-            // Narrator text: play with calm_narrator voice before dialogue
-            if (event.narrator && typeof event.narrator === "string" && event.narrator.trim()) {
-              narratorTextEnqueued = true;
-              enqueueTtsSegment(event.narrator.trim(), "calm_narrator", "calm", currentTtsGeneration);
-            }
           } else if (event.type === "token") {
             if (suppressCurrentTurnOutput) return;
             const tokenText = String(event.content || "");
@@ -581,18 +632,9 @@ export default function Home() {
             const parsed = extractPlayableChunks(ttsBuffer);
             ttsBuffer = parsed.remainder;
             for (const chunk of parsed.chunks) {
-              // When narrator text came via meta event, skip asterisk parsing for dialogue
-              // (narrator already enqueued separately) — route directly with client voice.
-              if (narratorTextEnqueued) {
-                const clean = normalizeTtsText(chunk);
-                if (clean) {
-                  enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
-                }
-              } else {
-                const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
-                for (const segment of routedSegments) {
-                  enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
-                }
+              const routedSegments = splitTtsByStageDirections(chunk, voiceTypeForTurn, emotionForTurn);
+              for (const segment of routedSegments) {
+                enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
               }
             }
 
@@ -629,16 +671,9 @@ export default function Home() {
       }
 
       if (!suppressCurrentTurnOutput && ttsBuffer.trim()) {
-        if (narratorTextEnqueued) {
-          const clean = normalizeTtsText(ttsBuffer.trim());
-          if (clean) {
-            enqueueTtsSegment(clean, voiceTypeForTurn, emotionForTurn, currentTtsGeneration);
-          }
-        } else {
-          const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
-          for (const segment of routedSegments) {
-            enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
-          }
+        const routedSegments = splitTtsByStageDirections(ttsBuffer.trim(), voiceTypeForTurn, emotionForTurn);
+        for (const segment of routedSegments) {
+          enqueueTtsSegment(segment.text, segment.voiceType, segment.emotion, currentTtsGeneration);
         }
       }
 
@@ -676,6 +711,10 @@ export default function Home() {
       const nextInteractionState =
         (activePatch.interactionState as InteractionState | undefined) || baseState.interactionState;
 
+      // Propagate emotionState from patch so it persists across turns
+      const nextEmotionState =
+        (activePatch.emotionState as MultiAgentGameState["emotionState"] | undefined) || baseState.emotionState;
+
       const computedNextState: MultiAgentGameState = {
         ...baseState,
         agents: nextAgents,
@@ -689,6 +728,7 @@ export default function Home() {
         conversationHistory: nextConversationHistory,
         gamePlan: baseState.gamePlan,
         interactionState: nextInteractionState,
+        emotionState: nextEmotionState,
       };
 
       // Also propagate sharedMemory from patch
@@ -708,7 +748,7 @@ export default function Home() {
         for (const tc of toolCallsList) {
           if (tc.name === "update_emotion") {
             newFeedItems.push({
-              id: `feed_emo_${Date.now()}`,
+              id: `feed_emo_${++feedSeqRef.current}`,
               type: "emotion_change",
               timestamp: Date.now(),
               agentName: speakingAgentName,
@@ -717,7 +757,7 @@ export default function Home() {
             });
           } else if (tc.name === "trigger_event") {
             newFeedItems.push({
-              id: `feed_evt_${Date.now()}`,
+              id: `feed_evt_${++feedSeqRef.current}`,
               type: "event_triggered",
               timestamp: Date.now(),
               eventType: String(tc.args.event_type || ""),
@@ -725,7 +765,7 @@ export default function Home() {
             });
           } else if (tc.name === "agent_note") {
             newFeedItems.push({
-              id: `feed_note_${Date.now()}`,
+              id: `feed_note_${++feedSeqRef.current}`,
               type: "agent_note",
               timestamp: Date.now(),
               fromAgent: speakingAgentName,
@@ -773,7 +813,7 @@ export default function Home() {
         setGameEvents((prev) => [
           ...prev,
           {
-            id: `evt_${Date.now()}`,
+            id: `evt_${++feedSeqRef.current}`,
             type: String((activePatch as Record<string, unknown>).eventType || "crisis"),
             description: latestEvent,
           },
@@ -818,7 +858,7 @@ export default function Home() {
         const switchedToAgent = baseState.agents.find((a) => a.agent.id === nextActiveId);
         // Feed: agent switch
         setMissionFeedItems((prev) => [...prev, {
-          id: `feed_switch_${Date.now()}`,
+          id: `feed_switch_${++feedSeqRef.current}`,
           type: "agent_switch" as const,
           timestamp: Date.now(),
           fromAgent: speakingAgentName,
@@ -829,7 +869,7 @@ export default function Home() {
           setGameEvents((prev) => [
             ...prev,
             {
-              id: `switch_${Date.now()}`,
+              id: `switch_${++feedSeqRef.current}`,
               type: learningMode ? "learning" : "new_character",
               description: switchReason,
             },
@@ -843,52 +883,20 @@ export default function Home() {
     } catch (e) {
       console.error("Multi-agent chat error:", e);
       setGameState((prev) => ({ ...prev, dialogue: "Connexion perdue. Réessayez." }));
+      // On error, signal player can act again since no TTS will play
+      setIsPlayerTurn(true);
     } finally {
       setIsLoading(false);
     }
   }, [multiAgentState, enqueueTtsSegment]);
 
-  // ====== LEGACY SINGLE-AGENT GAME ======
+  // Keep a ref to the latest gameState for use in callbacks that shouldn't re-create on every render.
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+
   const sendAction = useCallback(async (playerText: string) => {
-    // If in multi-agent mode, delegate
-    if (multiAgentState) {
-      return sendMultiAgentAction(playerText);
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerText,
-          turnCount: gameState.turnCount,
-          gameState: { hp: gameState.hp, maxHp: gameState.maxHp, currentStation: gameState.currentStation, inventory: gameState.inventory },
-          sessionId: sessionIdRef.current,
-          documentContext,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.narrative || "Erreur API game");
-      }
-      const typedData = data as GameResponse;
-
-      applyActions(typedData.actions || []);
-      setLatestReport(typedData.report || null);
-      setSpeakerName(typedData.speakerName || "Maître du Jeu");
-      setSpeakerType(typedData.speakerType || "narrator");
-      setGameState((prev) => ({ ...prev, dialogue: typedData.narrative, turnCount: prev.turnCount + 1, isGameStarted: true }));
-      setScreenPhase("game");
-
-      if (typedData.audioBase64) playAudio(typedData.audioBase64);
-    } catch (e) {
-      console.error("API error:", e);
-      setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [multiAgentState, sendMultiAgentAction, gameState.turnCount, gameState.hp, gameState.maxHp, gameState.currentStation, gameState.inventory, documentContext, applyActions, playAudio]);
+    return sendMultiAgentAction(playerText);
+  }, [sendMultiAgentAction]);
 
   const startGame = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
@@ -897,42 +905,8 @@ export default function Home() {
     setAssessments([]);
     setLatestReport(null);
     setGameEvents([]);
-
-    if (documentContext) {
-      // Document mode → go to orchestration
-      setScreenPhase("orchestrating");
-    } else {
-      // Fallback mode → legacy single-agent
-      setMultiAgentState(null);
-      setScreenPhase("game");
-      // We need to trigger sendAction after state updates
-      setTimeout(() => {
-        fetch("/api/game", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            playerText: "",
-            turnCount: 0,
-            gameState: { hp: 100, maxHp: 100, currentStation: "Châtelet-Les Halles", inventory: INITIAL_GAME_STATE.inventory },
-            sessionId: sessionIdRef.current,
-            documentContext: null,
-          }),
-        })
-          .then((res) => res.json())
-          .then((data: GameResponse) => {
-            applyActions(data.actions || []);
-            setSpeakerName(data.speakerName || "Maître du Jeu");
-            setSpeakerType(data.speakerType || "narrator");
-            setGameState((prev) => ({ ...prev, dialogue: data.narrative, turnCount: 1, isGameStarted: true }));
-            if (data.audioBase64) playAudio(data.audioBase64);
-          })
-          .catch((e) => {
-            console.error("Init error:", e);
-            setGameState((prev) => ({ ...prev, dialogue: "Signal perdu dans les tunnels. Réessayez." }));
-          });
-      }, 0);
-    }
-  }, [documentContext, applyActions, playAudio]);
+    setScreenPhase("orchestrating");
+  }, []);
 
   const handleOrchestrationReady = useCallback(async (setup: SimulationSetup & { gamePlan?: GamePlan }) => {
     // Build RAG index from document
@@ -1025,10 +999,20 @@ export default function Home() {
   const handleFinishSimulation = useCallback(() => {
     const run = async () => {
       if (isGeneratingManagerReport) return;
+      // Stop all audio and TTS
       if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onpause = null;
         audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
         audioRef.current = null;
       }
+      ttsGenerationRef.current += 1;
+      ttsQueueRef.current = [];
+      ttsPreloadRef.current.clear();
+      isTtsPlayingRef.current = false;
+      autoKickoffCallbackRef.current = null;
 
       if (multiAgentState) {
         setIsGeneratingManagerReport(true);
@@ -1074,9 +1058,23 @@ export default function Home() {
 
   const handleRestartSimulation = useCallback(() => {
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
       audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
       audioRef.current = null;
     }
+    // Clear TTS pipeline completely
+    ttsGenerationRef.current += 1;
+    ttsQueueRef.current = [];
+    ttsPreloadRef.current.clear();
+    isTtsPlayingRef.current = false;
+    autoKickoffCallbackRef.current = null;
+    autoKickoffStateRef.current = null;
+    autoKickoffFiredRef.current = null;
+    prefetchedResponseRef.current = null;
+
     sessionIdRef.current = crypto.randomUUID();
     setAssessments([]);
     setLatestReport(null);
@@ -1087,12 +1085,16 @@ export default function Home() {
     setDocumentContext(null);
     setDocumentFilename(null);
     setIsReportVisible(false);
+    setIsPlayerTurn(false);
     setMultiAgentState(null);
     setGameEvents([]);
     setMissionFeedItems([]);
     setActTransition(null);
+    setAgentTransition(null);
     setSimulationEnd(null);
+    setLearningModeState({ active: false, message: "" });
     prevTotalScoreRef.current = 50;
+    prevDisplayAgentIdRef.current = "";
   }, []);
 
   // Get active agent for display — use displayActiveAgentId so the name only changes
@@ -2329,26 +2331,40 @@ export default function Home() {
                 A vous...
               </motion.div>
             )}
-            <PushToTalk
-              onSpeechResult={(t) => sendAction(t)}
-              disabled={isLoading || gameState.isGameOver}
-              onRecordingChange={(isRecording) => {
-                isRecordingRef.current = isRecording;
-                if (isRecording) {
-                  setIsPlayerTurn(false);
-                }
-                if (isRecording && audioRef.current) {
-                  audioRef.current.pause();
-                  audioRef.current = null;
-                }
-                if (isRecording) {
-                  ttsGenerationRef.current += 1;
-                  ttsQueueRef.current = [];
-                  ttsPreloadRef.current.clear();
-                  isTtsPlayingRef.current = false;
-                }
-              }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 20, width: "100%" }}>
+              <PushToTalk
+                onSpeechResult={(t) => sendAction(t)}
+                disabled={isLoading || gameState.isGameOver}
+                onRecordingChange={(isRecording) => {
+                  isRecordingRef.current = isRecording;
+                  if (isRecording) {
+                    setIsPlayerTurn(false);
+                    // Cancel any pending auto-kickoff — the user is speaking now
+                    autoKickoffCallbackRef.current = null;
+                  }
+                  if (isRecording && audioRef.current) {
+                    audioRef.current.onended = null;
+                    audioRef.current.onerror = null;
+                    audioRef.current.onpause = null;
+                    audioRef.current.pause();
+                    audioRef.current.removeAttribute("src");
+                    audioRef.current = null;
+                  }
+                  if (isRecording) {
+                    ttsGenerationRef.current += 1;
+                    ttsQueueRef.current = [];
+                    ttsPreloadRef.current.clear();
+                    isTtsPlayingRef.current = false;
+                  }
+                }}
+              />
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                <TextInput
+                  onSubmit={(t) => sendAction(t)}
+                  disabled={isLoading || !isPlayerTurn || gameState.isGameOver}
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -2385,6 +2401,14 @@ export default function Home() {
           />
         )}
       </div>
+
+      {/* ── AGENT SWITCH TRANSITION ── */}
+      {agentTransition && (
+        <AgentTransitionOverlay
+          agent={agentTransition.agent}
+          onComplete={() => setAgentTransition(null)}
+        />
+      )}
 
       {/* ── ACT TRANSITION OVERLAY ── */}
       {actTransition && (

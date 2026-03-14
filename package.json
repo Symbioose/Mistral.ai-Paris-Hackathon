@@ -9,8 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/mistral": "^3.0.21",
-    "ai": "^6.0.105",
     "framer-motion": "^12.34.3",
     "next": "16.1.6",
     "openai": "^6.25.0",

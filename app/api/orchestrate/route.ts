@@ -16,7 +16,10 @@ export async function POST(req: NextRequest) {
     documentText = String(body?.documentText || "");
     filename = String(body?.filename || filename);
   } catch {
-    // Safe defaults
+    return new Response(
+      `data: ${JSON.stringify({ type: "error", message: "Corps JSON invalide." })}\n\n`,
+      { status: 400, headers: { "Content-Type": "text/event-stream" } },
+    );
   }
 
   const text = String(documentText || "").trim();

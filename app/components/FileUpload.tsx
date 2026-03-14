@@ -73,7 +73,11 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
 
       {/* Drop zone */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Déposer ou sélectionner un fichier"
         onClick={() => !isLoading && inputRef.current?.click()}
+        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !isLoading) { e.preventDefault(); inputRef.current?.click(); } }}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
@@ -188,7 +192,7 @@ export default function FileUpload({ onDocumentReady }: FileUploadProps) {
 
       {/* Error */}
       {error && (
-        <div style={{ border: "1px solid var(--corp-danger)", borderRadius: 8, padding: "12px 16px", background: "rgba(220,38,38,0.04)" }}>
+        <div role="alert" style={{ border: "1px solid var(--corp-danger)", borderRadius: 8, padding: "12px 16px", background: "rgba(220,38,38,0.04)" }}>
           <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 13, color: "var(--corp-danger)", margin: 0 }}>
             {error}
           </p>

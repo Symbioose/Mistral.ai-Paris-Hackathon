@@ -12,48 +12,72 @@ export default function TextInput({ onSubmit, disabled }: TextInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = () => {
-    if (text.trim()) {
-      onSubmit(text.trim());
+    const trimmed = text.trim();
+    if (trimmed) {
+      onSubmit(trimmed);
       setText("");
     }
   };
 
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-md">
-      <div className="w-full flex gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          disabled={disabled}
-          placeholder="Que fais-tu ?"
-          className="
-            flex-1 px-4 py-2.5 rounded-lg
-            bg-zinc-900/80 backdrop-blur
-            border border-cyan-500/30
-            text-zinc-200 placeholder-zinc-600
-            focus:border-cyan-400/60 focus:outline-none focus:shadow-lg focus:shadow-cyan-500/10
-            disabled:opacity-50 disabled:cursor-not-allowed
-            font-mono text-sm
-          "
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || !text.trim()}
-          className="
-            px-4 py-2.5 rounded-lg font-mono text-sm uppercase tracking-wider
-            bg-cyan-500/10 border border-cyan-500/30 text-cyan-300
-            hover:bg-cyan-500/20 hover:border-cyan-400/50 hover:shadow-lg hover:shadow-cyan-500/10
-            disabled:opacity-50 disabled:cursor-not-allowed
-            transition-all duration-300 active:scale-95
-          "
-        >
-          Envoyer
-        </button>
-      </div>
-      <span className="text-[10px] font-mono text-zinc-600">Mode texte (mic non disponible)</span>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        maxWidth: 420,
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSubmit();
+        }}
+        disabled={disabled}
+        placeholder="Tapez votre réponse..."
+        aria-label="Saisir votre réponse"
+        style={{
+          flex: 1,
+          padding: "10px 14px",
+          fontFamily: "'Space Mono', monospace",
+          fontSize: 14,
+          color: "#1A1A1A",
+          background: disabled ? "#e8e5da" : "#F3F0E6",
+          border: "3px solid #1A1A1A",
+          borderRadius: 0,
+          boxShadow: "3px 3px 0 #1A1A1A",
+          outline: "none",
+          opacity: disabled ? 0.55 : 1,
+          cursor: disabled ? "not-allowed" : "text",
+        }}
+      />
+      <button
+        onClick={handleSubmit}
+        disabled={disabled || !text.trim()}
+        aria-label="Envoyer la réponse"
+        style={{
+          padding: "10px 18px",
+          fontFamily: "'Space Mono', monospace",
+          fontSize: 13,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: disabled || !text.trim() ? "#999" : "#F3F0E6",
+          background: disabled || !text.trim() ? "#ccc" : "#FF5B22",
+          border: "3px solid #1A1A1A",
+          borderRadius: 0,
+          boxShadow: disabled || !text.trim() ? "none" : "3px 3px 0 #1A1A1A",
+          cursor: disabled || !text.trim() ? "not-allowed" : "pointer",
+          transition: "all 0.1s ease",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Envoyer
+      </button>
     </div>
   );
 }

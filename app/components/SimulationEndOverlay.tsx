@@ -71,6 +71,9 @@ export default function SimulationEndOverlay({
 
   return (
     <div
+      role="dialog"
+      aria-label={`Simulation terminée. Score: ${totalScore} sur 100`}
+      aria-modal="true"
       style={{
         position: "fixed",
         inset: 0,

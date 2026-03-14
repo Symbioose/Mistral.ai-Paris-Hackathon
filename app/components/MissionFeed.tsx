@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MissionFeedItem, FeedItemType } from "@/app/lib/types";
 
@@ -152,6 +152,13 @@ function FeedItemRow({ item }: { item: MissionFeedItem }) {
 export default function MissionFeed({ items, isActive }: MissionFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visible = useMemo(() => items.slice(-30), [items]);
+
+  // Force re-render every 15s to update relative timestamps
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {

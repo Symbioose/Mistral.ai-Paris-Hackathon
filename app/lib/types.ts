@@ -215,7 +215,7 @@ export interface SharedMemoryNote {
   fromAgent: string;
   toAgent: string;
   note: string;
-  priority: string;
+  priority: "low" | "medium" | "high";
   timestamp: number;
 }
 

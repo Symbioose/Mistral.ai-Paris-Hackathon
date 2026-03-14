@@ -39,7 +39,7 @@ function extractJson<T>(raw: string): T | null {
 
 async function generateQAPairs(documentText: string): Promise<QAPair[]> {
   const docLength = documentText.length;
-  const targetCount = docLength < 2000 ? "5 a 8" : docLength < 5000 ? "8 a 12" : "12 a 20";
+  const targetCount = docLength < 2000 ? "5 a 8" : docLength < 5000 ? "8 a 12" : docLength < 20000 ? "12 a 20" : "15 a 25";
 
   const message = await chatCompletion({
     model: MODEL_PREPARATION,
@@ -83,7 +83,7 @@ JSON strict, aucun texte hors JSON:
   ]
 }`,
       },
-      { role: "user", content: documentText.slice(0, 8000) },
+      { role: "user", content: documentText.slice(0, 100000) },
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,
@@ -476,6 +476,12 @@ export async function prepareGamePlan(
     const t1 = Date.now();
     const qaPairs = await generateQAPairs(documentText);
     console.log(`[prepare] Step 1 done in ${Date.now() - t1}ms — ${qaPairs.length} Q&A pairs`);
+    // Validate grounding: warn about Q&As with empty source_excerpt
+    const ungrounded = qaPairs.filter((qa) => !qa.source_excerpt);
+    if (ungrounded.length > 0) {
+      console.warn(`[prepare] ${ungrounded.length}/${qaPairs.length} Q&A(s) have empty source_excerpt (grounding not enforced by LLM): ${ungrounded.map((q) => q.id).join(", ")}`);
+    }
+
     status(`${qaPairs.length} questions generees — validation en cours...`);
 
     // Step 2: Categorize
@@ -495,13 +501,18 @@ export async function prepareGamePlan(
     }
 
     // Assign uncategorized Q&As to the first category
+    const orphanedQAs: string[] = [];
     for (const qa of qaPairs) {
       if (!qa.categoryId && categories.length > 0) {
         qa.categoryId = categories[0].id;
         if (!categories[0].qaPairIds.includes(qa.id)) {
           categories[0].qaPairIds.push(qa.id);
         }
+        orphanedQAs.push(qa.id);
       }
+    }
+    if (orphanedQAs.length > 0) {
+      console.warn(`[prepare] ${orphanedQAs.length} Q&A(s) were not categorized by LLM, assigned to "${categories[0].name}": ${orphanedQAs.join(", ")}`);
     }
 
     // Step 3: Generate agents + scenario

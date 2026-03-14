@@ -119,7 +119,7 @@ export default function DialogueBox({ text, isLoading, speakerName = "Maître du
         </div>
 
         {/* Text */}
-        <div style={{ minHeight: 56 }}>
+        <div style={{ minHeight: 56 }} aria-live="polite" role="log">
           {isLoading ? (
             <div className="flex items-end gap-1" style={{ height: 20 }}>
               {[0, 1, 2, 3, 4].map((i) => (

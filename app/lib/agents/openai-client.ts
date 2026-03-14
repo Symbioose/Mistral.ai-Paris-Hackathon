@@ -47,6 +47,7 @@ export interface StreamChatCompletionOptions {
   messages: ChatCompletionMessageParam[];
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,11 @@ const RETRY_DELAY_MS = 1000;
 function isRetryable(error: unknown): boolean {
   if (error instanceof OpenAI.APIError) {
     return error.status === 429 || (error.status !== undefined && error.status >= 500);
+  }
+  // Retry on network errors (timeout, ECONNRESET, etc.)
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return msg.includes("timeout") || msg.includes("econnreset") || msg.includes("fetch failed");
   }
   return false;
 }
@@ -133,13 +139,16 @@ export function streamChatCompletion(options: StreamChatCompletionOptions): Read
       try {
         const client = getClient();
         const stream = await withRetry(() =>
-          client.chat.completions.create({
-            model: options.model,
-            messages: options.messages,
-            temperature: options.temperature ?? 0.5,
-            max_tokens: options.maxTokens ?? 150,
-            stream: true,
-          }),
+          client.chat.completions.create(
+            {
+              model: options.model,
+              messages: options.messages,
+              temperature: options.temperature ?? 0.5,
+              max_tokens: options.maxTokens ?? 150,
+              stream: true,
+            },
+            { timeout: options.timeoutMs ?? 30000 },
+          ),
         );
 
         for await (const chunk of stream) {

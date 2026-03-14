@@ -51,9 +51,11 @@ export default function Inventory({ items }: InventoryProps) {
                   {/* Tooltip */}
                   {hoveredItem === item.id && (
                     <div
+                      role="tooltip"
                       style={{
                         position:   "absolute",
-                        bottom:     "calc(100% + 8px)",
+                        bottom:     i < 3 ? "auto" : "calc(100% + 8px)",
+                        top:        i < 3 ? "calc(100% + 8px)" : "auto",
                         left:       "50%",
                         transform:  "translateX(-50%)",
                         zIndex:     50,

@@ -18,13 +18,15 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
     const diff = hp - start;
     const startTime = performance.now();
     const duration = 500;
+    let rafId: number;
     const animate = (t: number) => {
       const p = Math.min((t - startTime) / duration, 1);
       const e = 1 - Math.pow(1 - p, 3);
       setDisplayHp(Math.round(start + diff * e));
-      if (p < 1) requestAnimationFrame(animate);
+      if (p < 1) rafId = requestAnimationFrame(animate);
     };
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
   }, [hp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
@@ -46,7 +48,7 @@ export default function HealthBar({ hp, maxHp }: HealthBarProps) {
       </div>
 
       {/* Track */}
-      <div style={{ height: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, position: "relative", overflow: "hidden" }}>
+      <div role="progressbar" aria-valuenow={hp} aria-valuemin={0} aria-valuemax={maxHp} aria-label={`Points de vie: ${hp} sur ${maxHp}`} style={{ height: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, position: "relative", overflow: "hidden" }}>
         {/* Bar */}
         <div
           style={{

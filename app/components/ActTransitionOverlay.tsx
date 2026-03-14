@@ -27,6 +27,9 @@ export default function ActTransitionOverlay({
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-label={`Acte ${completedAct.act_number} accompli${nextAct ? `, prochain acte: ${nextAct.title}` : ""}`}
       style={{
         position: "fixed",
         inset: 0,
