@@ -1,185 +1,14 @@
 import { NextRequest } from "next/server";
-import { MultiAgentGameState, QAPair, InteractionState, AgentEmotion, SharedMemoryNote } from "@/app/lib/types";
+import { MultiAgentGameState, QAPair, InteractionState, EmotionState, SharedMemoryNote } from "@/app/lib/types";
 import { mistralChat } from "@/app/lib/agents/mistral-client";
 import { streamText } from "ai";
 import { mistral as vercelMistral } from "@ai-sdk/mistral";
-
-// ---------------------------------------------------------------------------
-// Mistral Function Calling — Tools for agent orchestration
-// ---------------------------------------------------------------------------
-
-const ORCHESTRATION_TOOLS = [
-  {
-    type: "function" as const,
-    function: {
-      name: "update_emotion",
-      description:
-        "Change l'état émotionnel de l'agent actif. Affecte la voix TTS et les animations.",
-      parameters: {
-        type: "object",
-        properties: {
-          emotion: {
-            type: "string",
-            enum: ["calm", "stressed", "angry", "panicked", "suspicious"],
-            description: "La nouvelle émotion de l'agent",
-          },
-          reason: {
-            type: "string",
-            description: "Courte raison du changement émotionnel (1 phrase)",
-          },
-        },
-        required: ["emotion", "reason"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "trigger_event",
-      description:
-        "Déclenche un événement narratif dramatique dans la simulation (alarme, appel urgent, panne, intrusion, etc.)",
-      parameters: {
-        type: "object",
-        properties: {
-          event_type: {
-            type: "string",
-            enum: ["alert", "complication", "revelation", "time_pressure", "plot_twist"],
-            description: "Type d'événement narratif",
-          },
-          description: {
-            type: "string",
-            description: "Description courte de l'événement (1 phrase)",
-          },
-        },
-        required: ["event_type", "description"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "agent_note",
-      description:
-        "L'agent envoie une note interne aux autres agents (inter-agent communication). Visible dans le journal de mission.",
-      parameters: {
-        type: "object",
-        properties: {
-          to_agent: {
-            type: "string",
-            description: "Nom de l'agent destinataire",
-          },
-          note: {
-            type: "string",
-            description: "Message interne entre agents (1-2 phrases)",
-          },
-          priority: {
-            type: "string",
-            enum: ["low", "medium", "high"],
-            description: "Priorité du message",
-          },
-        },
-        required: ["to_agent", "note", "priority"],
-      },
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Parallel orchestration — runs alongside streaming for agent drama
-// ---------------------------------------------------------------------------
-
-interface OrchestrationResult {
-  emotionUpdate?: { emotion: AgentEmotion; reason: string };
-  triggeredEvent?: { event_type: string; description: string };
-  agentNote?: { to_agent: string; note: string; priority: string };
-}
-
-async function runOrchestration(
-  agentName: string,
-  agentRole: string,
-  playerMessage: string,
-  phase: string,
-  currentScore: number,
-  scenarioContext: string,
-): Promise<OrchestrationResult> {
-  try {
-    const message = await mistralChat({
-      model: "mistral-large-latest",
-      messages: [
-        {
-          role: "system",
-          content: `Tu es le moteur d'orchestration d'une simulation RPG de formation.
-Agent actif: ${agentName} (${agentRole})
-Phase: ${phase} | Score joueur: ${currentScore}/100
-Contexte: ${scenarioContext}
-
-RÈGLES OBLIGATOIRES pour update_emotion (TOUJOURS appeler si le joueur a répondu):
-- Phase ASKING ou RE_ASKING, réponse correcte → émotion = "calm" (soulagé, satisfait)
-- Phase REPHRASING (1ère erreur) → émotion = "stressed" (légèrement contraint)
-- Phase LEARNING (2ème erreur) → émotion = "angry" ou "panicked" selon la personnalité
-- Kickoff initial (sans réponse du joueur) → émotion = "calm"
-- TOUJOURS appeler update_emotion quand le joueur a envoyé un message
-
-Outils supplémentaires:
-- trigger_event: déclenche un événement narratif dramatique (alarme, appel urgent, revelation). Max 1 toutes les 4 interactions.
-- agent_note: envoie une note interne secrète à un collègue. Crée du drama! Ex: "Attention, ce stagiaire ne maîtrise pas les procédures de sécurité, surveillez-le."
-
-IMPORTANT: Utilise agent_note quand le joueur fait des erreurs répétées — préviens les autres agents.`,
-        },
-        {
-          role: "user",
-          content: playerMessage
-            ? `Le joueur a dit: "${playerMessage}"`
-            : "Début d'interaction — l'agent prend la parole.",
-        },
-      ],
-      tools: ORCHESTRATION_TOOLS,
-      toolChoice: "auto",
-      temperature: 0.6,
-      maxTokens: 300,
-      timeoutMs: 8000,
-    });
-
-    const result: OrchestrationResult = {};
-
-    if (message.tool_calls && Array.isArray(message.tool_calls)) {
-      for (const tc of message.tool_calls) {
-        if (tc.type !== "function") continue;
-        const fn = tc?.function;
-        if (!fn?.name) continue;
-        let args: Record<string, unknown> = {};
-        try {
-          args = typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments || {};
-        } catch {
-          continue;
-        }
-
-        if (fn.name === "update_emotion" && args.emotion) {
-          result.emotionUpdate = {
-            emotion: String(args.emotion) as AgentEmotion,
-            reason: String(args.reason || ""),
-          };
-        } else if (fn.name === "trigger_event" && args.event_type) {
-          result.triggeredEvent = {
-            event_type: String(args.event_type),
-            description: String(args.description || ""),
-          };
-        } else if (fn.name === "agent_note" && args.to_agent) {
-          result.agentNote = {
-            to_agent: String(args.to_agent),
-            note: String(args.note || ""),
-            priority: String(args.priority || "low"),
-          };
-        }
-      }
-    }
-
-    return result;
-  } catch {
-    // Orchestration is non-critical — fail silently
-    return {};
-  }
-}
+import {
+  DEFAULT_EMOTION,
+  computeNextEmotion,
+  emotionToTtsParams,
+  emotionToPromptInstruction,
+} from "@/app/lib/emotion-engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -223,6 +52,29 @@ function sanitizeNarrative(text: string): string {
     /@@STAGE_(\d+)@@/g,
     (_m, i: string) => `*${stageStore[Number(i)] || ""}*`,
   );
+}
+
+/**
+ * Parse [NARRATOR]...[/NARRATOR] tags from LLM output.
+ * Returns { narrator, dialogue } where dialogue is everything outside the tags.
+ */
+function parseNarratorTags(text: string): { narrator?: string; dialogue: string } {
+  const narratorRegex = /\[NARRATOR\]([\s\S]*?)\[\/NARRATOR\]/gi;
+  const narratorParts: string[] = [];
+  let dialogue = text;
+
+  let match: RegExpExecArray | null;
+  while ((match = narratorRegex.exec(text)) !== null) {
+    narratorParts.push(match[1].trim());
+  }
+
+  // Remove narrator tags from text to get dialogue
+  dialogue = text.replace(narratorRegex, "").trim();
+
+  return {
+    narrator: narratorParts.length > 0 ? narratorParts.join(" ") : undefined,
+    dialogue: dialogue || text,
+  };
 }
 
 const CONFIRM_REGEX =
@@ -343,7 +195,7 @@ JSON strict uniquement:
 }
 
 // ---------------------------------------------------------------------------
-// POST handler — Q&A State Machine
+// POST handler — Q&A State Machine with Deterministic Emotion Engine
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
@@ -373,8 +225,11 @@ export async function POST(req: NextRequest) {
   const currentQA = getCurrentQAPair(gameState);
   const phase = interactionState?.phase || "ASKING";
 
+  // Current emotion state (from game state or default)
+  let currentEmotion: EmotionState = gameState.emotionState || DEFAULT_EMOTION;
+
   // ---------------------------------------------------------------------------
-  // Determine what prompt to give the agent
+  // Determine what prompt to give the agent + compute emotion
   // ---------------------------------------------------------------------------
 
   let agentPrompt = "";
@@ -384,6 +239,7 @@ export async function POST(req: NextRequest) {
   let switchToAgentId = "";
   let shouldAdvanceAct = false;
   let simulationComplete = false;
+  let speakerType: "narrator" | "client" | "learning" = "client";
 
   if (!gamePlan || !interactionState || !currentQA) {
     // Fallback: no game plan, just have the agent talk
@@ -394,6 +250,7 @@ export async function POST(req: NextRequest) {
     agentPrompt = "La simulation est terminee. Donne un bilan encourageant. 15 mots max.";
     simulationComplete = true;
   } else if (phase === "LEARNING") {
+    speakerType = "learning";
     // Learning mode: check if player confirmed understanding
     if (!isKickoff && CONFIRM_REGEX.test(safePlayerMessage)) {
       // Player understood — switch back to category agent, re-ask
@@ -404,6 +261,9 @@ export async function POST(req: NextRequest) {
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
         agentPrompt = `Tres bien, le joueur a compris ! Dis-lui brievement que c'est bon et que tu le repasses a ${catAgent.name} pour la suite. Exemple: "Parfait ! Je vous repasse ${catAgent.name}." 10 mots max.`;
+
+        // Emotion: learning complete
+        currentEmotion = computeNextEmotion(currentEmotion, { type: "learning_complete" });
       }
     } else if (isKickoff) {
       // Learning agent kickoff — explain the answer
@@ -416,10 +276,14 @@ export async function POST(req: NextRequest) {
     // ASKING or RE_ASKING kickoff — agent poses the question
     const isFirst = gameState.conversationHistory.length === 0;
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
+
+    // For kickoffs, optionally include narrator scene-setting
+    const narratorInstruction = "Tu peux commencer par une courte didascalie entre [NARRATOR]...[/NARRATOR] pour poser la scene (optionnel, 10 mots max).";
+
     if (isFirst) {
-      agentPrompt = `${situation}\nTu commences la simulation. Joue la scene ci-dessus, presente-toi tres brievement (1 phrase), puis pose cette question naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\n${narratorInstruction}\nTu commences la simulation. Joue la scene ci-dessus, presente-toi tres brievement (1 phrase), puis pose cette question naturellement: "${currentQA.question}". 25 mots max hors didascalie. Ne donne JAMAIS la reponse.`;
     } else {
-      agentPrompt = `${situation}\nJoue la scene ci-dessus dans ton style puis pose naturellement: "${currentQA.question}". 25 mots max. Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\n${narratorInstruction}\nJoue la scene ci-dessus dans ton style puis pose naturellement: "${currentQA.question}". 25 mots max hors didascalie. Ne donne JAMAIS la reponse.`;
     }
   } else {
     // ASKING or RE_ASKING — player answered, evaluate
@@ -440,6 +304,12 @@ export async function POST(req: NextRequest) {
 
       nextState.completedQAs = [...interactionState.completedQAs, currentQA.id];
       nextState.failCount = 0;
+
+      // Emotion: correct answer
+      currentEmotion = computeNextEmotion(currentEmotion, {
+        type: "correct_answer",
+        firstTry: interactionState.failCount === 0,
+      });
 
       const next = getNextQAInfo(gameState);
 
@@ -462,6 +332,9 @@ export async function POST(req: NextRequest) {
           shouldSwitchAgent = true;
           switchToAgentId = nextAgent.id;
         }
+
+        // Emotion resets on act change
+        currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
 
         agentPrompt = `Le joueur a bien repondu. Felicite-le en 5 mots puis passe-lui le relais a ${nextAgent?.name || "ton collegue"}. Exemple: "Tres bien ! Je vous passe ${nextAgent?.name || "mon collegue"}." 12 mots max.`;
       } else {
@@ -487,6 +360,9 @@ export async function POST(req: NextRequest) {
         nextState.completedQAs = [...interactionState.completedQAs, currentQA.id];
         nextState.failCount = 0;
 
+        // Emotion: still wrong but we move on
+        currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 3 });
+
         const next = getNextQAInfo(gameState);
         if (!next.hasNext) {
           nextState.phase = "COMPLETE";
@@ -500,6 +376,7 @@ export async function POST(req: NextRequest) {
           shouldAdvanceAct = true;
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
+          currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
           agentPrompt = `On avance. Passe brievement la main a ${nextAgent?.name || "ton collegue"}. 10 mots max.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
@@ -516,6 +393,9 @@ export async function POST(req: NextRequest) {
         nextState.failCount = 1;
         nextState.phase = "REPHRASING";
 
+        // Emotion: first wrong answer
+        currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 1 });
+
         const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
         agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\nReformule la question differemment pour l'aider a reflechir: "${currentQA.question}". NE DONNE PAS LA REPONSE, oriente seulement. 25 mots max.`;
       } else {
@@ -524,6 +404,9 @@ export async function POST(req: NextRequest) {
         nextState.failCount = 2;
         nextState.phase = "LEARNING";
         nextState.failedQAs = [...interactionState.failedQAs, currentQA.id];
+
+        // Emotion: second wrong answer — angry
+        currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 2 });
 
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
@@ -534,13 +417,27 @@ export async function POST(req: NextRequest) {
   }
 
   // ---------------------------------------------------------------------------
+  // Map emotion to legacy AgentEmotion for agent state compatibility
+  // ---------------------------------------------------------------------------
+
+  const ttsEmotionResult = emotionToTtsParams(currentEmotion);
+
+  // ---------------------------------------------------------------------------
   // Build patch
   // ---------------------------------------------------------------------------
+
+  // Update agent emotion in agents array
+  const updatedAgents = gameState.agents.map((a) => {
+    if (a.agent.id === (shouldSwitchAgent ? switchToAgentId : gameState.activeAgentId)) {
+      return { ...a, emotion: ttsEmotionResult.emotion };
+    }
+    return a;
+  });
 
   const patch: Record<string, unknown> = {
     activeAgentId: shouldSwitchAgent ? switchToAgentId : gameState.activeAgentId,
     triggeredEvents: gameState.triggeredEvents,
-    agents: gameState.agents,
+    agents: updatedAgents,
     currentAct: shouldAdvanceAct
       ? clamp(gameState.currentAct + 1, 1, gamePlan?.categories.length || 1)
       : gameState.currentAct,
@@ -551,6 +448,7 @@ export async function POST(req: NextRequest) {
       ...interactionState,
       ...nextState,
     },
+    emotionState: currentEmotion,
   };
 
   // Apply score update
@@ -593,44 +491,30 @@ export async function POST(req: NextRequest) {
   }
 
   // ---------------------------------------------------------------------------
-  // Launch parallel orchestration (function calling) + streaming
+  // Build system prompt with emotion injection
   // ---------------------------------------------------------------------------
 
-  const orchestrationPromise = runOrchestration(
-    activeAgentState.agent.name,
-    activeAgentState.agent.role,
-    safePlayerMessage,
-    phase,
-    gameState.totalScore,
-    gameState.scenario?.initial_situation || "",
-  );
+  const emotionInstruction = emotionToPromptInstruction(currentEmotion);
 
   // Build shared memory context for the active agent
   const sharedMemoryNotes = (gameState.sharedMemory || [])
-    .filter((n) => n.toAgent === activeAgentState.agent.name || n.toAgent === "all")
+    .filter((n: SharedMemoryNote) => n.toAgent === activeAgentState.agent.name || n.toAgent === "all")
     .slice(-5);
   const sharedMemoryContext = sharedMemoryNotes.length > 0
-    ? `\nNOTES INTERNES recues de tes collegues:\n${sharedMemoryNotes.map((n) => `- [${n.priority.toUpperCase()}] ${n.fromAgent}: "${n.note}"`).join("\n")}\nUtilise ces notes pour adapter ton comportement.`
+    ? `\nNOTES INTERNES recues de tes collegues:\n${sharedMemoryNotes.map((n: SharedMemoryNote) => `- [${n.priority.toUpperCase()}] ${n.fromAgent}: "${n.note}"`).join("\n")}\nUtilise ces notes pour adapter ton comportement.`
     : "";
 
-  const currentEmotion = activeAgentState.emotion || "calm";
-  const emotionInstruction = {
-    calm:       "Ton calme, posé, confiant, professionnel.",
-    stressed:   "Ton stressé: phrases courtes, légèrement hésitant, rythme rapide.",
-    angry:      "Ton ferme et direct, peu de politesse, tension perceptible.",
-    panicked:   "Ton paniqué: phrases décousues, exclamations, urgence extrême.",
-    suspicious: "Ton lent et méfiant, questions courtes, peu de confiance.",
-  }[currentEmotion] ?? "Ton professionnel.";
+  const narratorTagInstruction = "Si tu veux poser la scene, utilise [NARRATOR]texte de narration[/NARRATOR] avant tes paroles. Le narrateur est une voix off neutre. Tes paroles doivent etre en dehors de ces balises.";
 
   const messages = [
     { role: "system" as const, content: activeAgentState.systemPrompt },
     {
       role: "system" as const,
-      content: `ÉTAT ÉMOTIONNEL ACTUEL: ${currentEmotion.toUpperCase()} — ${emotionInstruction} Adapte IMPÉRATIVEMENT ton style à cet état.`,
+      content: `ETAT EMOTIONNEL ACTUEL: ${currentEmotion.current.toUpperCase()} (intensite: ${currentEmotion.intensity.toFixed(1)}, trajectoire: ${currentEmotion.trajectory}) — ${emotionInstruction} Adapte IMPERATIVEMENT ton style a cet etat.`,
     },
     {
       role: "system" as const,
-      content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
+      content: `REGLE CRITIQUE : 25 MOTS MAXIMUM. Pas de markdown. ${narratorTagInstruction} Utilise des *asterisques* UNIQUEMENT pour les sons (ex: *Le telephone sonne*). Ne mets JAMAIS tes paroles entre asterisques. Ne donne JAMAIS la reponse dans ta question.${sharedMemoryContext}`,
     },
     ...safeHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: "system" as const, content: agentPrompt },
@@ -656,58 +540,18 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 
-      // Wait for orchestration result (runs in parallel with streaming)
-      const orchResult = await orchestrationPromise;
-
-      // Apply orchestration results to patch
-      const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
-
-      if (orchResult.emotionUpdate) {
-        const updatedAgents = gameState.agents.map((a) => {
-          if (a.agent.id === gameState.activeAgentId) {
-            return { ...a, emotion: orchResult.emotionUpdate!.emotion };
-          }
-          return a;
-        });
-        patch.agents = updatedAgents;
-        toolCalls.push({
-          name: "update_emotion",
-          args: { emotion: orchResult.emotionUpdate.emotion, reason: orchResult.emotionUpdate.reason },
-        });
-      }
-
-      if (orchResult.triggeredEvent) {
-        patch.triggeredEvents = [
-          ...(patch.triggeredEvents as string[] || gameState.triggeredEvents),
-          orchResult.triggeredEvent.description,
-        ];
-        patch.eventType = orchResult.triggeredEvent.event_type;
-        toolCalls.push({
-          name: "trigger_event",
-          args: { event_type: orchResult.triggeredEvent.event_type, description: orchResult.triggeredEvent.description },
-        });
-      }
-
-      if (orchResult.agentNote) {
-        toolCalls.push({
-          name: "agent_note",
-          args: { to_agent: orchResult.agentNote.to_agent, note: orchResult.agentNote.note, priority: orchResult.agentNote.priority },
-        });
-        // Store in shared memory for cross-agent context
-        const existingMemory = (gameState.sharedMemory || []) as SharedMemoryNote[];
-        patch.sharedMemory = [
-          ...existingMemory,
-          {
-            fromAgent: activeAgentState.agent.name,
-            toAgent: orchResult.agentNote.to_agent,
-            note: orchResult.agentNote.note,
-            priority: orchResult.agentNote.priority,
-            timestamp: Date.now(),
-          },
-        ];
-      }
-
-      send({ type: "meta", patch, toolCalls });
+      // Send initial meta with emotion (no waiting for orchestration)
+      send({
+        type: "meta",
+        patch,
+        emotion: {
+          current: currentEmotion.current,
+          intensity: currentEmotion.intensity,
+          trajectory: currentEmotion.trajectory,
+          reason: currentEmotion.reason,
+        },
+        speakerType,
+      });
 
       let streamedRaw = "";
       let streamedSent = "";
@@ -733,6 +577,9 @@ export async function POST(req: NextRequest) {
       const content = sanitizeNarrative(streamedRaw.trim()) || "Situation critique. Votre decision ?";
       const normalizedFinal = content.replace(/\s+/g, " ").trim();
 
+      // Parse narrator tags from the final content
+      const { narrator, dialogue } = parseNarratorTags(normalizedFinal);
+
       // Synthesize tokens if streaming produced nothing
       if (tokenEventCount === 0 && normalizedFinal) {
         const words = normalizedFinal.split(" ");
@@ -744,8 +591,34 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      send({ type: "done", content: normalizedFinal, patch, toolCalls });
-      send({ type: "meta", patch, toolCalls });
+      send({
+        type: "done",
+        content: normalizedFinal,
+        patch,
+        emotion: {
+          current: currentEmotion.current,
+          intensity: currentEmotion.intensity,
+          trajectory: currentEmotion.trajectory,
+          reason: currentEmotion.reason,
+        },
+        narrator,
+        dialogue,
+        speakerType,
+      });
+
+      // Final meta event (backwards compatible)
+      send({
+        type: "meta",
+        patch,
+        emotion: {
+          current: currentEmotion.current,
+          intensity: currentEmotion.intensity,
+          trajectory: currentEmotion.trajectory,
+          reason: currentEmotion.reason,
+        },
+        narrator,
+        speakerType,
+      });
 
       controller.close();
     },
