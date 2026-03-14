@@ -1,7 +1,7 @@
 # Architecture Technique — RAG to RPG (v2)
 
 Serious game engine B2B : un document de formation → simulation multi-agents voice roleplay.
-Stack : Next.js 16 App Router · Mistral AI (via AWS Bedrock) · ElevenLabs · Browser Web Speech API
+Stack : Next.js 16 App Router · Mistral AI (via AWS Bedrock) · ElevenLabs · Deepgram Nova-2
 
 ---
 
@@ -16,9 +16,10 @@ Document PDF/TXT
        │
   app/page.tsx         → machine d'état React (phases UI)
        │
-       ├─ /api/chat    → SSE : Q&A state machine + streaming OpenAI SDK (Bedrock)
-       ├─ /api/tts     → ElevenLabs TTS par segment (prefetch parallèle)
-       └─ /api/report  → Rapport manager JSON post-simulation
+       ├─ /api/chat      → SSE : Q&A state machine + streaming OpenAI SDK (Bedrock)
+       ├─ /api/tts       → ElevenLabs TTS par segment (prefetch parallèle)
+       ├─ /api/deepgram  → Fournit la clé Deepgram au client (sécurité)
+       └─ /api/report    → Rapport manager JSON post-simulation
 ```
 
 **Phases UI :** `upload → ready → orchestrating → game → report`
@@ -222,7 +223,53 @@ L'orchestrateur peut injecter des notes d'un agent à un autre (ex : "joueur fai
 
 ---
 
-## 6. RAG (`app/lib/rag.ts`)
+## 6. STT — Deepgram WebSocket (`app/hooks/useDeepgramSTT.ts`)
+
+### Architecture
+
+```
+onMouseDown (user gesture)
+    │
+    ├── getUserMedia()          ← appelé SYNCHRONIQUEMENT dans le handler (requis par Safari)
+    │       │
+    │       ▼
+    ├── fetch /api/deepgram     ← récupère la clé API côté serveur (sécurité)
+    │       │
+    │       ▼
+    ├── new WebSocket(wss://api.deepgram.com/v1/listen?...)
+    │       │
+    │       ▼ ws.onopen
+    └── MediaRecorder.start(100ms)   ← chunks opus/mp4 envoyés toutes les 100ms
+            │
+            ▼ ws.onmessage
+        résultats interim (affichés en live) + résultats finaux (accumulés)
+
+onMouseUp → stopRecording() → transcript envoyé à sendAction()
+```
+
+### Format audio cross-browser
+
+`getRecorderConfig()` teste dans l'ordre :
+1. `audio/webm;codecs=opus` → `encoding=opus` (Chrome, Firefox)
+2. `audio/webm` → `encoding=opus`
+3. `audio/ogg;codecs=opus` → `encoding=opus`
+4. `audio/mp4` → `encoding=aac` (Safari)
+
+Le paramètre `encoding` est passé dynamiquement à Deepgram selon le format détecté.
+
+### Route `/api/deepgram`
+
+Fournit `DEEPGRAM_API_KEY` au client depuis le serveur. En production, remplacer par la création d'un token temporaire via l'API Deepgram (TTL court, scope `usage:write` uniquement).
+
+### État visuel (`PushToTalk.tsx`)
+
+- `isPressed` : activé immédiatement sur `mousedown` → animation instantanée
+- `isRecording` (hook) : activé sur `ws.onopen` (~200–500ms après)
+- `isActive = isPressed || isRecording` → pilote tous les visuels
+
+---
+
+## 7. RAG (`app/lib/rag.ts`)
 
 BM25 maison (zéro dépendance externe) :
 - Chunking : overlapping chunks sur le document source
@@ -234,7 +281,7 @@ Utilisé dans les system prompts des agents : chaque agent reçoit les chunks le
 
 ---
 
-## 7. Rapport manager (`/api/report/route.ts`)
+## 8. Rapport manager (`/api/report/route.ts`)
 
 Déclenché manuellement à la fin de la simulation.
 
@@ -261,7 +308,7 @@ Déclenché manuellement à la fin de la simulation.
 
 ---
 
-## 8. State central (`MultiAgentGameState`)
+## 9. State central (`MultiAgentGameState`)
 
 ```typescript
 {
@@ -283,7 +330,7 @@ Patches partiels envoyés via SSE → client merge : `nextState = { ...currentSt
 
 ---
 
-## 9. API Routes
+## 10. API Routes
 
 | Route | Méthode | Description |
 |-------|---------|-------------|
@@ -291,11 +338,12 @@ Patches partiels envoyés via SSE → client merge : `nextState = { ...currentSt
 | `/api/orchestrate` | POST | SSE — `prepareGamePlan()` (3 appels Mistral via Bedrock) |
 | `/api/chat` | POST | SSE — Q&A state machine + streaming OpenAI SDK (Bedrock) |
 | `/api/tts` | POST | ElevenLabs TTS → audio (base64 ou stream) |
+| `/api/deepgram` | GET | Fournit `DEEPGRAM_API_KEY` au client pour la connexion WebSocket |
 | `/api/report` | POST | Rapport manager JSON |
 
 ---
 
-## 10. Composants UI
+## 11. Composants UI
 
 | Composant | Rôle |
 |-----------|------|
@@ -307,19 +355,25 @@ Patches partiels envoyés via SSE → client merge : `nextState = { ...currentSt
 | `MissionFeed` | Terminal orchestration live (bas panneau droit) |
 | `SidePanel` | Panneau droit — KnowledgeHeatmap + MissionFeed |
 | `SkillsReportDashboard` | Rapport manager (position:fixed, scroll indépendant) |
-| `PushToTalk` | STT Web Speech API `fr-FR` |
+| `PushToTalk` | STT push-to-talk — `getUserMedia` + Deepgram WebSocket |
 | `ActTransitionOverlay` | Animation transition entre actes |
 | `SimulationEndOverlay` | Écran fin de simulation + CTA rapport |
 
 ---
 
-## 11. Variables d'environnement
+## 12. Variables d'environnement
 
 ```env
+# Mistral (direct API — orchestration + streaming agents)
+MISTRAL_API_KEY=...
+
 # AWS Bedrock (via endpoint OpenAI-compatible)
 OPENAI_API_KEY=bedrock-api-key-...        # token pré-signé AWS (validité 12h)
 OPENAI_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/v1
 AWS_BEARER_TOKEN_BEDROCK=...              # bearer token brut (référence)
+
+# Deepgram (STT WebSocket streaming — cross-browser)
+DEEPGRAM_API_KEY=...
 
 # ElevenLabs
 ELEVENLABS_API_KEY=...
@@ -334,7 +388,7 @@ ELEVENLABS_VOICE_GRUFF_VETERAN=F9KUTOne5xOKqAbIU7yg
 
 ---
 
-## 12. Client LLM (`app/lib/agents/mistral-client.ts`)
+## 13. Client LLM (`app/lib/agents/mistral-client.ts`)
 
 Toutes les routes LLM passent par `mistralChat()` et `bedrockClient` (instance partagée `OpenAI`).
 
@@ -364,7 +418,7 @@ Le streaming dans `/api/chat` utilise `bedrockClient.chat.completions.create({ s
 
 ---
 
-## 13. Structure des fichiers
+## 14. Structure des fichiers
 
 ```
 app/
@@ -375,11 +429,13 @@ app/
 │   ├── orchestrate/route.ts          # SSE GamePlan
 │   ├── chat/route.ts                 # SSE Q&A state machine + function calling
 │   ├── tts/route.ts                  # ElevenLabs TTS
+│   ├── deepgram/route.ts             # Fournit DEEPGRAM_API_KEY au client
 │   └── report/route.ts               # Rapport manager
 ├── lib/
 │   ├── types.ts                      # Tous les types TypeScript
 │   ├── rag.ts                        # BM25 index + retrieval
 │   ├── sfx.ts                        # Effets sonores
+│   ├── speech.d.ts                   # (legacy — types Web Speech API, non utilisés)
 │   ├── agents/
 │   │   ├── mistral-client.ts         # Client OpenAI→Bedrock + helper mistralChat()
 │   │   ├── prepare.ts                # Pipeline orchestration 3 steps
@@ -388,6 +444,8 @@ app/
 │   │   └── agent-factory.ts          # (legacy, non utilisé en v2)
 │   └── voice/
 │       └── voices.ts                 # VOICE_MAP + EMOTION_PARAMS
+├── hooks/
+│   └── useDeepgramSTT.ts             # WebSocket Deepgram — streaming STT cross-browser
 └── components/
     ├── AgentGenerationView.tsx
     ├── ActiveAgentDisplay.tsx
@@ -397,8 +455,7 @@ app/
     ├── MissionFeed.tsx
     ├── SidePanel.tsx
     ├── SkillsReportDashboard.tsx
-    ├── PushToTalk.tsx
-    ├── TextInput.tsx
+    ├── PushToTalk.tsx                  # Push-to-talk Deepgram (cross-browser)
     ├── FileUpload.tsx
     ├── ActTransitionOverlay.tsx
     ├── SimulationEndOverlay.tsx
@@ -407,11 +464,11 @@ app/
 
 ---
 
-## 14. Démarrage local
+## 15. Démarrage local
 
 ```bash
 npm install
-cp .env.example .env.local   # remplir OPENAI_API_KEY + OPENAI_BASE_URL + ELEVENLABS_API_KEY
+cp .env.example .env.local   # remplir MISTRAL_API_KEY + OPENAI_API_KEY + OPENAI_BASE_URL + ELEVENLABS_API_KEY + DEEPGRAM_API_KEY
 npm run dev
 # → http://localhost:3000
 ```

@@ -7,7 +7,6 @@ import { buildRagIndex, RagIndex } from "@/app/lib/rag";
 import SidePanel from "@/app/components/SidePanel";
 import DialogueBox from "@/app/components/DialogueBox";
 import PushToTalk from "@/app/components/PushToTalk";
-import TextInput from "@/app/components/TextInput";
 import FileUpload from "@/app/components/FileUpload";
 import SkillsReportDashboard from "@/app/components/SkillsReportDashboard";
 import AgentGenerationView from "@/app/components/AgentGenerationView";
@@ -183,7 +182,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [speakerName, setSpeakerName] = useState("Maître du Jeu");
   const [speakerType, setSpeakerType] = useState<"narrator" | "npc">("narrator");
-  const [hasMic, setHasMic] = useState(true);
   const [documentContext, setDocumentContext] = useState<string | null>(null);
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
   const [screenPhase, setScreenPhase] = useState<"landing" | "upload" | "ready" | "orchestrating" | "game">("landing");
@@ -231,11 +229,6 @@ export default function Home() {
   } | null>(null);
   const prevTotalScoreRef = useRef<number>(50);
 
-  useEffect(() => {
-    const has = typeof window !== "undefined"
-      && (!!window.SpeechRecognition || !!(window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
-    setHasMic(has);
-  }, []);
 
   // Auto-kickoff: when a switch is scheduled and loading finishes, trigger the new agent's intro.
   // If TTS is still playing, defer to processTtsQueue via autoKickoffCallbackRef.
@@ -2242,27 +2235,23 @@ export default function Home() {
               borderTop:     "1px solid rgba(255,255,255,0.10)",
             }}
           >
-            {hasMic ? (
-              <PushToTalk
-                onSpeechResult={(t) => sendAction(t)}
-                disabled={isLoading || gameState.isGameOver}
-                onRecordingChange={(isRecording) => {
-                  isRecordingRef.current = isRecording;
-                  if (isRecording && audioRef.current) {
-                    audioRef.current.pause();
-                    audioRef.current = null;
-                  }
-                  if (isRecording) {
-                    ttsGenerationRef.current += 1;
-                    ttsQueueRef.current = [];
-                    ttsPreloadRef.current.clear();
-                    isTtsPlayingRef.current = false;
-                  }
-                }}
-              />
-            ) : (
-              <TextInput onSubmit={(t) => sendAction(t)} disabled={isLoading || gameState.isGameOver} />
-            )}
+            <PushToTalk
+              onSpeechResult={(t) => sendAction(t)}
+              disabled={isLoading || gameState.isGameOver}
+              onRecordingChange={(isRecording) => {
+                isRecordingRef.current = isRecording;
+                if (isRecording && audioRef.current) {
+                  audioRef.current.pause();
+                  audioRef.current = null;
+                }
+                if (isRecording) {
+                  ttsGenerationRef.current += 1;
+                  ttsQueueRef.current = [];
+                  ttsPreloadRef.current.clear();
+                  isTtsPlayingRef.current = false;
+                }
+              }}
+            />
           </div>
         )}
       </div>

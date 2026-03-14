@@ -39,7 +39,7 @@ Your Document (PDF/TXT)
 │                                               │
 │  Mistral evaluates every answer in real-time  │
 │  ElevenLabs voices each agent with emotion    │
-│  Web Speech API captures player voice input   │
+│  Deepgram streams voice input cross-browser   │
 └───────────────────────┬───────────────────────┘
                         │
                         ▼
@@ -51,7 +51,7 @@ Your Document (PDF/TXT)
 ## Key Features
 
 ### For Employees
-- **Voice-first interaction** — speak your answers, no typing required
+- **Voice-first interaction** — speak your answers, works on any browser (Chrome, Safari, Firefox, Edge)
 - **Adaptive difficulty** — wrong answer once: agent rephrases. Twice: pedagogical agent explains in detail
 - **Dramatic scenario** — each document generates a unique narrative with professional conflicts, emergencies, and character handoffs
 - **Real-time emotional feedback** — agents change emotion (calm → stressed → panicked) based on player performance
@@ -74,7 +74,7 @@ Your Document (PDF/TXT)
 | LLM Inference | Mistral Large + Small via **AWS Bedrock** | Q&A generation, evaluation, orchestration |
 | Agent Streaming | Mistral API (Vercel AI SDK) | Real-time agent dialogue streaming |
 | TTS | ElevenLabs (`eleven_multilingual_v2`) | 5 distinct character voices + emotion params |
-| STT | Web Speech API (`fr-FR`) | Browser-native voice input |
+| STT | Deepgram Nova-2 (WebSocket streaming) | Real-time cross-browser voice input |
 | RAG | BM25 (custom, zero dependencies) | Document chunking + relevant context retrieval |
 
 ### Mistral Usage
@@ -171,6 +171,7 @@ Final score = weighted average across all thematic categories.
 - Node.js 18+
 - Mistral API key
 - ElevenLabs API key
+- Deepgram API key
 - AWS Bedrock access (OpenAI-compatible endpoint)
 
 ### Installation
@@ -195,6 +196,9 @@ MISTRAL_API_KEY=your_mistral_key
 # AWS Bedrock (OpenAI-compatible endpoint — for LLM inference)
 OPENAI_API_KEY=bedrock-api-key-...
 OPENAI_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/v1
+
+# Deepgram (STT — cross-browser WebSocket streaming)
+DEEPGRAM_API_KEY=your_deepgram_key
 
 # ElevenLabs (TTS — 5 voices)
 ELEVENLABS_API_KEY=your_elevenlabs_key
