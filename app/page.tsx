@@ -89,6 +89,20 @@ function extractPlayableChunks(
   const chunks: string[] = [];
   let rest = buffer;
 
+  // Helper: check if position `pos` is inside an open *asterisk* block.
+  // Counts unmatched `*` (ignoring `**bold**`) before `pos`.
+  function insideAsterisks(str: string, pos: number): boolean {
+    let open = false;
+    for (let j = 0; j < pos; j++) {
+      if (str[j] === "*") {
+        // Skip ** (bold markers — not stage directions)
+        if (str[j + 1] === "*") { j++; continue; }
+        open = !open;
+      }
+    }
+    return open;
+  }
+
   while (rest.length >= minChars) {
     const window = rest.slice(0, maxChars);
     let cut = -1;
@@ -97,8 +111,10 @@ function extractPlayableChunks(
       const ch = window[i];
       const next = window[i + 1] || "";
       if (/[.!?]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
+        // Never cut inside an open *asterisk* block
+        if (insideAsterisks(window, i)) continue;
         cut = i + 1;
-        break; // Take the first sentence boundary, not the last
+        break;
       }
     }
 
@@ -107,15 +123,23 @@ function extractPlayableChunks(
         const ch = window[i];
         const next = window[i + 1] || "";
         if (/[,;:]/.test(ch) && (/\s/.test(next) || i === window.length - 1)) {
+          if (insideAsterisks(window, i)) continue;
           cut = i + 1;
-          break; // Take the first clause boundary, not the last
+          break;
         }
       }
     }
 
     if (cut === -1 && window.length === maxChars) {
-      const spaceIdx = window.lastIndexOf(" ");
-      cut = spaceIdx > minChars ? spaceIdx : maxChars;
+      // Try to find a space outside asterisks
+      for (let i = maxChars - 1; i > minChars; i--) {
+        if (window[i] === " " && !insideAsterisks(window, i)) {
+          cut = i;
+          break;
+        }
+      }
+      // If no safe cut found (entire window is inside asterisks), wait for more text
+      if (cut === -1) break;
     }
 
     if (cut === -1) break;
