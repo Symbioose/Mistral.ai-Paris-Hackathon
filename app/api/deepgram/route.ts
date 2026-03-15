@@ -18,16 +18,17 @@ export async function GET() {
   try {
     const projectId = process.env.DEEPGRAM_PROJECT_ID;
     if (!projectId) {
-      // SECURITY: Never expose the main API key to the client in production.
-      // DEEPGRAM_PROJECT_ID is required to create scoped, short-lived keys.
-      console.error(
-        "[deepgram] DEEPGRAM_PROJECT_ID not set. Cannot create scoped temporary key. " +
-        "Set DEEPGRAM_PROJECT_ID in environment variables for production deployment."
-      );
-      return NextResponse.json(
-        { error: "Deepgram STT not configured for production (missing project ID)." },
-        { status: 503 },
-      );
+      // Development fallback: return main key directly when project ID is not configured.
+      // In production, always set DEEPGRAM_PROJECT_ID to use scoped short-lived keys.
+      if (process.env.NODE_ENV === "production") {
+        console.error("[deepgram] DEEPGRAM_PROJECT_ID not set — required in production.");
+        return NextResponse.json(
+          { error: "Deepgram STT not configured for production (missing project ID)." },
+          { status: 503 },
+        );
+      }
+      console.warn("[deepgram] No DEEPGRAM_PROJECT_ID — using main key (dev only).");
+      return NextResponse.json({ apiKey });
     }
 
     const response = await fetch(
