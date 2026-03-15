@@ -38,7 +38,8 @@ export default function PushToTalk({
   // Safari requires getUserMedia() to be invoked synchronously in the same
   // execution frame as the user gesture — no async/await before the call.
   const handleStart = useCallback(() => {
-    if (disabled) return;
+    if (disabled || isPressedRef.current) return;
+    isPressedRef.current = true;
     setIsPressed(true);
 
     // getUserMedia must be called synchronously from the user gesture (Safari requirement).
@@ -59,6 +60,8 @@ export default function PushToTalk({
   }, [disabled, startRecordingWithStream]);
 
   const handleStop = useCallback(() => {
+    if (!isPressedRef.current) return; // Prevent double-fire
+    isPressedRef.current = false;
     setIsPressed(false);
     stopRecording();
     const finalText = transcriptRef.current.trim();
@@ -66,6 +69,23 @@ export default function PushToTalk({
       onSpeechResult(finalText);
     }
   }, [stopRecording, onSpeechResult]);
+
+  // Track pressed state in a ref for the global mouseup listener
+  const isPressedRef = useRef(false);
+
+  // Listen for mouseup/touchend on window so the user can move their cursor
+  // freely while holding the button without accidentally stopping recording.
+  useEffect(() => {
+    const onMouseUp = () => {
+      if (isPressedRef.current) handleStop();
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("touchend", onMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("touchend", onMouseUp);
+    };
+  }, [handleStop]);
 
   return (
     <div
@@ -135,15 +155,12 @@ export default function PushToTalk({
         <button
           aria-label={isActive ? "Relacher pour envoyer" : "Maintenir pour parler"}
           onMouseDown={handleStart}
-          onMouseUp={handleStop}
-          onMouseLeave={() => isRecording && handleStop()}
           onKeyDown={(e) => { if (e.key === " " && !isActive && !disabled) { e.preventDefault(); handleStart(); } }}
           onKeyUp={(e) => { if (e.key === " " && isActive) { e.preventDefault(); handleStop(); } }}
           onTouchStart={(e) => {
             e.preventDefault();
             handleStart();
           }}
-          onTouchEnd={handleStop}
           disabled={disabled}
           style={{
             width:          80,

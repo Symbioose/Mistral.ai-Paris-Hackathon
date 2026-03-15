@@ -47,11 +47,13 @@ export function useDeepgramSTT(
   const streamRef        = useRef<MediaStream | null>(null);
   const finalRef         = useRef("");
   const interimRef       = useRef("");
+  const closedByUserRef  = useRef(false);
 
   const startRecordingWithStream = useCallback(
     async (stream: MediaStream) => {
-      finalRef.current   = "";
-      interimRef.current = "";
+      finalRef.current    = "";
+      interimRef.current  = "";
+      closedByUserRef.current = false;
       setTranscript("");
       streamRef.current = stream;
 
@@ -139,18 +141,20 @@ export function useDeepgramSTT(
       };
 
       ws.onclose = () => {
-        // If the WebSocket closes unexpectedly while recording, clean up state
-        if (mediaRecorderRef.current?.state === "recording") {
-          mediaRecorderRef.current.stop();
-          mediaRecorderRef.current = null;
+        // Only clean up if the close was unexpected (not user-initiated via stopRecording)
+        if (!closedByUserRef.current) {
+          console.warn("[Deepgram] WebSocket closed unexpectedly — keeping state for user to release button.");
+          // Don't stop the MediaRecorder or reset isRecording here —
+          // the user is still holding the button. The transcript captured
+          // so far is still valid and will be submitted on release.
         }
-        setIsRecording(false);
       };
     },
     [language],
   );
 
   const stopRecording = useCallback(() => {
+    closedByUserRef.current = true;
     setIsRecording(false);
 
     if (mediaRecorderRef.current?.state !== "inactive") {
@@ -158,8 +162,10 @@ export function useDeepgramSTT(
     }
     mediaRecorderRef.current = null;
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "CloseStream" }));
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "CloseStream" }));
+      }
       wsRef.current.close();
     }
     wsRef.current = null;
