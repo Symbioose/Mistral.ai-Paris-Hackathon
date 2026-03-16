@@ -213,6 +213,17 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid gameState: missing required fields." }, { status: 400 });
   }
 
+  // SEC-08: Prevent oversized payloads that could exhaust memory
+  if (gameState.agents.length > 10) {
+    return Response.json({ error: "Too many agents." }, { status: 400 });
+  }
+  if (gameState.conversationHistory && gameState.conversationHistory.length > 200) {
+    return Response.json({ error: "Conversation history too long." }, { status: 400 });
+  }
+  if (gameState.scores && gameState.scores.length > 20) {
+    return Response.json({ error: "Too many score entries." }, { status: 400 });
+  }
+
   const safePlayerMessage = String(playerMessage || "").trim().slice(0, 2000);
   const isKickoff = Boolean(kickoff);
   const { gamePlan, interactionState } = gameState;
