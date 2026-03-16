@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV === "development";
+
 const nextConfig: NextConfig = {
   reactCompiler: true,
 
@@ -29,20 +31,24 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          // Content Security Policy
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'wasm-unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
-              "media-src 'self' blob: https://api.elevenlabs.io",
-              "connect-src 'self' https://*.supabase.co https://api.deepgram.com https://api.elevenlabs.io wss://api.deepgram.com",
-              "font-src 'self' https://fonts.gstatic.com",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
+          // Content Security Policy — relaxed in dev for Next.js HMR/eval
+          ...(!isDev
+            ? [
+                {
+                  key: "Content-Security-Policy",
+                  value: [
+                    "default-src 'self'",
+                    "script-src 'self' 'wasm-unsafe-eval'",
+                    "style-src 'self' 'unsafe-inline'",
+                    "img-src 'self' data: https:",
+                    "media-src 'self' blob: https://api.elevenlabs.io",
+                    "connect-src 'self' https://*.supabase.co https://api.deepgram.com https://api.elevenlabs.io wss://api.deepgram.com",
+                    "font-src 'self' https://fonts.gstatic.com",
+                    "frame-ancestors 'none'",
+                  ].join("; "),
+                },
+              ]
+            : []),
         ],
       },
       {
