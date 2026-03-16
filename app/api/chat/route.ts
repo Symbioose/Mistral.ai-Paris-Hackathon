@@ -165,22 +165,27 @@ JSON strict uniquement:
         feedback: String(parsed.feedback || ""),
       };
     } catch {
-      // Keyword fallback
+      // Keyword fallback — require minimum answer length + keyword presence
       const lower = playerMessage.toLowerCase();
       const matched = qa.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+      const hasMinLength = playerMessage.trim().length >= 15;
+      const hasEnoughKeywords = matched.length >= Math.min(2, qa.keywords.length);
+      const isCorrect = hasMinLength && (hasEnoughKeywords || (matched.length >= 1 && playerMessage.trim().length >= 30));
       return {
-        correct: matched.length >= 1,
-        feedback: matched.length >= 1 ? "Mots-cles detectes" : "Aucun mot-cle trouve",
+        correct: isCorrect,
+        feedback: isCorrect ? "Mots-cles detectes" : "Reponse insuffisante",
       };
     }
   } catch (err) {
-    // On API error, fall back to keyword matching rather than auto-passing
     console.error("[evaluateAnswer] API error, falling back to keyword match:", err);
     const lower = playerMessage.toLowerCase();
     const matched = qa.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+    const hasMinLength = playerMessage.trim().length >= 15;
+    const hasEnoughKeywords = matched.length >= Math.min(2, qa.keywords.length);
+    const isCorrect = hasMinLength && (hasEnoughKeywords || (matched.length >= 1 && playerMessage.trim().length >= 30));
     return {
-      correct: matched.length >= 1,
-      feedback: matched.length >= 1 ? "Mots-cles detectes (mode secours)" : "Evaluation indisponible — aucun mot-cle trouve",
+      correct: isCorrect,
+      feedback: isCorrect ? "Mots-cles detectes (mode secours)" : "Evaluation indisponible — reponse insuffisante",
     };
   }
 }
@@ -261,10 +266,16 @@ export async function POST(req: NextRequest) {
   let speakerType: "narrator" | "client" | "learning" = "client";
 
   if (!gamePlan || !interactionState || !currentQA) {
-    // Fallback: no game plan, just have the agent talk
-    agentPrompt = isKickoff
-      ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
-      : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
+    // GAME-02: Fallback with turn limit to prevent infinite loop
+    const fallbackTurnCount = gameState.conversationHistory.filter((m) => m.role === "user").length;
+    if (fallbackTurnCount >= 10) {
+      simulationComplete = true;
+      agentPrompt = "La simulation est terminee. Merci pour votre participation. 10 mots max.";
+    } else {
+      agentPrompt = isKickoff
+        ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
+        : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
+    }
   } else if (phase === "COMPLETE") {
     agentPrompt = "La simulation est terminee. Donne un bilan encourageant. 15 mots max.";
     simulationComplete = true;
@@ -315,7 +326,7 @@ export async function POST(req: NextRequest) {
     if (evalResult.correct) {
       // Correct answer!
       const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-      const numQuestions = cat?.qaPairIds.length || 1;
+      const numQuestions = Math.max(1, cat?.qaPairIds?.length || 0);
       const maxPointsPerQuestion = 100 / numQuestions;
 
       // first try: full points, second: 60%, third (after learning): 30%
@@ -373,7 +384,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Wrong answer
       const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-      const numQuestions = cat?.qaPairIds.length || 1;
+      const numQuestions = Math.max(1, cat?.qaPairIds?.length || 0);
       const maxPointsPerQuestion = 100 / numQuestions;
 
       if (isReAsking) {
@@ -586,7 +597,15 @@ export async function POST(req: NextRequest) {
 
       try {
         const reader = textStream.getReader();
+        const streamStart = Date.now();
+        const STREAM_TIMEOUT_MS = 30000;
         while (true) {
+          // GAME-05: Abort if stream stalls for too long
+          if (Date.now() - streamStart > STREAM_TIMEOUT_MS) {
+            console.warn("[chat] Stream timeout after 30s");
+            reader.cancel();
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
           const rawDelta = String(value || "");
