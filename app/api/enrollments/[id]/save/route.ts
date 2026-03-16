@@ -42,7 +42,8 @@ export async function POST(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[enrollments/save] DB error:", error.message);
+    return NextResponse.json({ error: "Échec de la sauvegarde" }, { status: 500 });
   }
 
   return NextResponse.json({ enrollment });
