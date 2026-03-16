@@ -74,7 +74,7 @@ export async function POST(request: Request) {
 
   if (createError) {
     console.error("[trainings/create] DB insert error:", createError.message, createError.details, createError.hint);
-    return NextResponse.json({ error: createError.message }, { status: 500 });
+    return NextResponse.json({ error: "Échec de la création de la formation. Veuillez réessayer." }, { status: 500 });
   }
 
   return NextResponse.json({ training });

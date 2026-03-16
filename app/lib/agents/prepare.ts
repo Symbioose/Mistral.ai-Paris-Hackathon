@@ -314,6 +314,26 @@ JSON strict:
     relationship_to_player: String(a.relationship_to_player || "Collegue direct."),
   }));
 
+  // GAME-01: Ensure agent count matches category count
+  if (agents.length < categories.length) {
+    console.warn(`[prepare] Agent count (${agents.length}) < category count (${categories.length}). Padding with fallback agents.`);
+    while (agents.length < categories.length) {
+      const idx = agents.length;
+      const cat = categories[idx];
+      agents.push({
+        id: `agent_fallback_${idx + 1}`,
+        name: `Expert ${idx + 1}`,
+        role: cat?.name || `Expert ${idx + 1}`,
+        personality: "Professionnel et direct.",
+        voice_type: VOICE_ROTATION[idx % VOICE_ROTATION.length],
+        motivation: "Résoudre la situation.",
+        knowledge_topics: [cat?.name || ""],
+        intro_line: "Bien, passons aux choses sérieuses.",
+        relationship_to_player: "Collègue direct.",
+      });
+    }
+  }
+
   const learningAgent: Agent = {
     id: "learning_agent",
     name: String(parsed.learningAgent?.name || "Sophie Martin"),

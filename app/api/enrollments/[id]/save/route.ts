@@ -15,7 +15,7 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { gameState, chatHistory, score, totalQuestions, correctAnswers, completed } = body;
+  const { gameState, chatHistory, score, totalQuestions, correctAnswers, completed, version } = body;
 
   const updateData: Record<string, unknown> = {
     last_played_at: new Date().toISOString(),
@@ -33,16 +33,29 @@ export async function POST(
     updateData.status = "in_progress";
   }
 
-  const { data: enrollment, error } = await supabase
+  // GAME-03: Optimistic locking — increment version on each save
+  let query = supabase
     .from("enrollments")
-    .update(updateData)
+    .update({ ...updateData, version: (version || 0) + 1 })
     .eq("id", id)
-    .eq("student_id", user.id) // RLS + explicit check
-    .select()
-    .single();
+    .eq("student_id", user.id);
+
+  if (typeof version === "number") {
+    query = query.eq("version", version);
+  }
+
+  const { data: enrollment, error } = await query.select().single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[enrollments/save] DB error:", error.message);
+    return NextResponse.json({ error: "Échec de la sauvegarde" }, { status: 500 });
+  }
+
+  if (!enrollment) {
+    return NextResponse.json(
+      { error: "Version conflict — another tab may have saved. Please refresh." },
+      { status: 409 },
+    );
   }
 
   return NextResponse.json({ enrollment });

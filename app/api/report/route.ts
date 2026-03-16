@@ -269,13 +269,27 @@ export async function POST(req: NextRequest) {
 
   let fallbackFromPayload: SimulationReport | null = null;
   try {
-    let body: ReportRequest;
+    let body: ReportRequest & { enrollmentId?: string };
     try {
-      body = (await req.json()) as ReportRequest;
+      body = (await req.json()) as ReportRequest & { enrollmentId?: string };
     } catch {
       return Response.json({ error: "Invalid JSON body." }, { status: 400 });
     }
-    const gameState = body?.gameState;
+
+    let gameState = body?.gameState;
+
+    // SEC-05: Prefer server-side game state for enrolled students
+    if (body.enrollmentId) {
+      const { data: enrollment } = await supabase
+        .from("enrollments")
+        .select("game_state, student_id")
+        .eq("id", body.enrollmentId)
+        .single();
+
+      if (enrollment?.game_state && enrollment.student_id === user.id) {
+        gameState = enrollment.game_state as MultiAgentGameState;
+      }
+    }
 
     if (!gameState || !Array.isArray(gameState.scores)) {
       return Response.json({ error: "Invalid payload" }, { status: 400 });

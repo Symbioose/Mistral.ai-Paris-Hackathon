@@ -48,9 +48,11 @@ export function useDeepgramSTT(
   const finalRef         = useRef("");
   const interimRef       = useRef("");
   const closedByUserRef  = useRef(false);
+  const connectingRef    = useRef(false);
 
   const startRecordingWithStream = useCallback(
     async (stream: MediaStream) => {
+      connectingRef.current = true;
       finalRef.current    = "";
       interimRef.current  = "";
       closedByUserRef.current = false;
@@ -87,6 +89,7 @@ export function useDeepgramSTT(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        connectingRef.current = false;
         const recorderOptions = mimeType ? { mimeType } : undefined;
 
         let recorder: MediaRecorder;
@@ -155,6 +158,7 @@ export function useDeepgramSTT(
 
   const stopRecording = useCallback(() => {
     closedByUserRef.current = true;
+    connectingRef.current = false;
     setIsRecording(false);
 
     if (mediaRecorderRef.current?.state !== "inactive") {

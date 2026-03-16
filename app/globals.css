@@ -251,6 +251,48 @@ body {
   100% { background-position: 0% 50%; }
 }
 
+/* ================================================
+   UX-01: Responsive breakpoints for mobile/tablet
+   ================================================ */
+
+@media (max-width: 768px) {
+  /* Dashboard: collapse sidebar on mobile */
+  [data-sidebar] {
+    display: none !important;
+  }
+
+  /* Dashboard: full-width content on mobile */
+  [data-dashboard-content] {
+    margin-left: 0 !important;
+    padding: 16px !important;
+  }
+
+  /* Stats grid: stack on mobile */
+  [data-stats-grid] {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Cards grid: single column on mobile */
+  [data-cards-grid] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Modal: full width on mobile */
+  [data-modal] {
+    width: calc(100vw - 32px) !important;
+    max-height: calc(100vh - 64px) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra small screens */
+  [data-dashboard-content] {
+    padding: 12px !important;
+  }
+}
+
 /* ===== PRINT STYLES ===== */
 @media print {
   body {

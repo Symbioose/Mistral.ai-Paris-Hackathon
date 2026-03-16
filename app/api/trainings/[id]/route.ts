@@ -39,7 +39,8 @@ export async function DELETE(
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[trainings/delete] DB error:", error.message);
+    return NextResponse.json({ error: "Échec de la suppression" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });
@@ -58,11 +59,26 @@ export async function GET(
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
 
-  const { data: training, error } = await supabase
+  // Fetch profile to determine role
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const isManager = profile?.role === "manager";
+
+  let query = supabase
     .from("trainings")
     .select("*, enrollments(count)")
-    .eq("id", id)
-    .single();
+    .eq("id", id);
+
+  // Managers can only see their own trainings
+  if (isManager) {
+    query = query.eq("manager_id", user.id);
+  }
+
+  const { data: training, error } = await query.single();
 
   if (error || !training) {
     return NextResponse.json({ error: "Formation introuvable" }, { status: 404 });
