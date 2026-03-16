@@ -111,6 +111,14 @@ export function sfxSwitch() {
   } catch {}
 }
 
+/** Close the shared AudioContext — call on app shutdown / page leave. */
+export function sfxCleanup() {
+  if (audioCtx) {
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+  }
+}
+
 /** Triumphant chord — simulation complete (success) */
 export function sfxComplete() {
   try {
