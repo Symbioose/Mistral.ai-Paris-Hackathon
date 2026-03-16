@@ -288,12 +288,14 @@ export default function Home() {
     }
     if (!trainingId || screenPhase !== "landing") return;
 
+    const fallbackDashboard = enrollmentParam ? "/dashboard/student" : "/dashboard/manager";
+
     (async () => {
       try {
         const res = await fetch(`/api/trainings/${trainingId}`);
         if (!res.ok) {
           console.error("[page] Failed to fetch training:", res.status);
-          router.push("/dashboard/manager");
+          router.push(fallbackDashboard);
           return;
         }
         const { training } = await res.json();
@@ -305,11 +307,11 @@ export default function Home() {
           }
           setScreenPhase("orchestrating");
         } else {
-          router.push("/dashboard/manager");
+          router.push(fallbackDashboard);
         }
       } catch (err) {
         console.error("[page] Failed to load training:", err);
-        router.push("/dashboard/manager");
+        router.push(fallbackDashboard);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1137,7 +1139,7 @@ export default function Home() {
           body: JSON.stringify({
             gameState: multiAgentState,
             score: multiAgentState?.totalScore ?? 0,
-            totalQuestions: multiAgentState?.scores.length ?? 0,
+            totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? multiAgentState?.scores.length ?? 0,
             correctAnswers: multiAgentState?.scores.filter((s) => s.score >= 50).length ?? 0,
             completed: true,
           }),
@@ -1239,7 +1241,7 @@ export default function Home() {
         body: JSON.stringify({
           gameState: multiAgentState,
           score: multiAgentState?.totalScore ?? 0,
-          totalQuestions: multiAgentState?.scores.length ?? 0,
+          totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? multiAgentState?.scores.length ?? 0,
           correctAnswers: multiAgentState?.scores.filter((s) => s.score >= 50).length ?? 0,
           completed: false,
         }),
@@ -1285,6 +1287,28 @@ export default function Home() {
           borderRadius: "50%",
           animation: "corp-spinner 0.8s linear infinite",
         }} />
+      </div>
+    );
+  }
+
+  // ====== TRAINING LOADING SCREEN (prevent landing flash when ?training= param) ======
+  if (screenPhase === "landing" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("training")) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0,
+        background: "var(--corp-bg)", display: "flex",
+        alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16,
+      }}>
+        <div style={{
+          width: 40, height: 40,
+          border: "3px solid rgba(37,99,235,0.2)",
+          borderTop: "3px solid var(--corp-blue)",
+          borderRadius: "50%",
+          animation: "corp-spinner 0.8s linear infinite",
+        }} />
+        <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text-secondary)" }}>
+          Chargement de la formation...
+        </p>
       </div>
     );
   }
