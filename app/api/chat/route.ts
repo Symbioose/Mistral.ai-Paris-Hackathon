@@ -315,7 +315,7 @@ export async function POST(req: NextRequest) {
     if (evalResult.correct) {
       // Correct answer!
       const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-      const numQuestions = cat?.qaPairIds.length || 1;
+      const numQuestions = Math.max(1, cat?.qaPairIds?.length || 0);
       const maxPointsPerQuestion = 100 / numQuestions;
 
       // first try: full points, second: 60%, third (after learning): 30%
@@ -373,7 +373,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Wrong answer
       const cat = gamePlan.categories[interactionState.currentCategoryIndex];
-      const numQuestions = cat?.qaPairIds.length || 1;
+      const numQuestions = Math.max(1, cat?.qaPairIds?.length || 0);
       const maxPointsPerQuestion = 100 / numQuestions;
 
       if (isReAsking) {
