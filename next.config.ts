@@ -38,11 +38,11 @@ const nextConfig: NextConfig = {
                   key: "Content-Security-Policy",
                   value: [
                     "default-src 'self'",
-                    "script-src 'self' 'wasm-unsafe-eval'",
+                    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
                     "style-src 'self' 'unsafe-inline'",
                     "img-src 'self' data: https:",
                     "media-src 'self' blob: https://api.elevenlabs.io",
-                    "connect-src 'self' https://*.supabase.co https://api.deepgram.com https://api.elevenlabs.io wss://api.deepgram.com",
+                    "connect-src 'self' https://*.supabase.co https://api.deepgram.com https://api.elevenlabs.io https://api.mistral.ai wss://api.deepgram.com",
                     "font-src 'self' https://fonts.gstatic.com",
                     "frame-ancestors 'none'",
                   ].join("; "),
