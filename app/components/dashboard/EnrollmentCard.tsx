@@ -242,7 +242,7 @@ export default function EnrollmentCard({ enrollment, index, onPlay }: Enrollment
         marginTop: 16,
       }}>
         <ActionButton
-          label={enrollment.status === "completed" ? "Rejouer" : "Jouer"}
+          label={enrollment.status === "completed" ? "Rejouer" : enrollment.status === "in_progress" ? "Reprendre" : "Jouer"}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="5 3 19 12 5 21 5 3" />

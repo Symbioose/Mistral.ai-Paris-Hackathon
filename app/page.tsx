@@ -299,16 +299,49 @@ export default function Home() {
           return;
         }
         const { training } = await res.json();
-        if (training?.document_text) {
-          setDocumentContext(training.document_text);
-          setDocumentFilename(training.document_filename || "Document");
-          if (training.game_plan) {
-            setPrecomputedGamePlan(training.game_plan as GamePlan);
-          }
-          setScreenPhase("orchestrating");
-        } else {
+        if (!training?.document_text) {
           router.push(fallbackDashboard);
+          return;
         }
+
+        setDocumentContext(training.document_text);
+        setDocumentFilename(training.document_filename || "Document");
+
+        // Try to resume saved game state from enrollment
+        if (enrollmentParam) {
+          try {
+            const enrollRes = await fetch(`/api/enrollments/${enrollmentParam}`);
+            if (enrollRes.ok) {
+              const { enrollment } = await enrollRes.json();
+              if (enrollment?.game_state && enrollment.status === "in_progress") {
+                const savedState = enrollment.game_state as MultiAgentGameState;
+                // Build RAG index for future agent interactions
+                ragIndexRef.current = buildRagIndex(training.document_text);
+                setMultiAgentState(savedState);
+                setGameState((prev) => ({ ...prev, isGameStarted: true, dialogue: "" }));
+                setDisplayActiveAgentId(savedState.activeAgentId || "");
+                if (savedState.emotionState) {
+                  setEmotionState(savedState.emotionState);
+                }
+                setSpeakerName(
+                  savedState.agents.find((a) => a.agent.id === savedState.activeAgentId)?.agent.name || "Maître du Jeu",
+                );
+                setSpeakerType("npc");
+                setIsPlayerTurn(true);
+                setScreenPhase("game");
+                return;
+              }
+            }
+          } catch {
+            // Non-blocking — fall through to fresh start
+          }
+        }
+
+        // Fresh start: go through orchestration
+        if (training.game_plan) {
+          setPrecomputedGamePlan(training.game_plan as GamePlan);
+        }
+        setScreenPhase("orchestrating");
       } catch (err) {
         console.error("[page] Failed to load training:", err);
         router.push(fallbackDashboard);
@@ -1139,8 +1172,8 @@ export default function Home() {
           body: JSON.stringify({
             gameState: multiAgentState,
             score: multiAgentState?.totalScore ?? 0,
-            totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? multiAgentState?.scores.length ?? 0,
-            correctAnswers: multiAgentState?.scores.filter((s) => s.score >= 50).length ?? 0,
+            totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? 0,
+            correctAnswers: multiAgentState?.interactionState?.completedQAs?.length ?? 0,
             completed: true,
           }),
         }).catch(() => {});
@@ -1241,8 +1274,8 @@ export default function Home() {
         body: JSON.stringify({
           gameState: multiAgentState,
           score: multiAgentState?.totalScore ?? 0,
-          totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? multiAgentState?.scores.length ?? 0,
-          correctAnswers: multiAgentState?.scores.filter((s) => s.score >= 50).length ?? 0,
+          totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? 0,
+          correctAnswers: multiAgentState?.interactionState?.completedQAs?.length ?? 0,
           completed: false,
         }),
       });
