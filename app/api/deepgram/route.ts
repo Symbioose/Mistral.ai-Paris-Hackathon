@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/app/lib/supabase/server";
 
 /**
  * Returns a short-lived Deepgram temporary key for client-side WebSocket connection.
@@ -6,6 +7,12 @@ import { NextResponse } from "next/server";
  * exposing the main API key to the browser.
  */
 export async function GET() {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

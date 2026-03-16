@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { MultiAgentGameState, QAPair, InteractionState, EmotionState, SharedMemoryNote } from "@/app/lib/types";
 import { chatCompletion, streamChatCompletion } from "@/app/lib/agents/openai-client";
 import {
@@ -7,6 +7,7 @@ import {
   emotionToTtsParams,
   emotionToPromptInstruction,
 } from "@/app/lib/emotion-engine";
+import { createClient } from "@/app/lib/supabase/server";
 
 const MODEL = "gpt-4.1-mini";
 
@@ -189,6 +190,12 @@ JSON strict uniquement:
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   let body: { playerMessage?: string; gameState?: MultiAgentGameState; kickoff?: boolean };
   try {
     body = await req.json();

@@ -20,6 +20,8 @@ import ActTransitionOverlay from "@/app/components/ActTransitionOverlay";
 import SimulationEndOverlay from "@/app/components/SimulationEndOverlay";
 import MissionFeed from "@/app/components/MissionFeed";
 import AgentTransitionOverlay from "@/app/components/AgentTransitionOverlay";
+import { useAuth } from "@/app/providers/AuthProvider";
+import { useRouter } from "next/navigation";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -203,6 +205,8 @@ function splitTtsByStageDirections(
 
 
 export default function Home() {
+  const { user, profile, loading: authLoading, isManager, isStudent, isAuthenticated, signIn, signUp, signOut } = useAuth();
+  const router = useRouter();
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
   const [assessments, setAssessments] = useState<ManagerAssessment[]>([]);
   const [latestReport, setLatestReport] = useState<SimulationReport | null>(null);
@@ -213,10 +217,16 @@ export default function Home() {
   const [speakerType, setSpeakerType] = useState<"narrator" | "npc">("narrator");
   const [documentContext, setDocumentContext] = useState<string | null>(null);
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
+  const [precomputedGamePlan, setPrecomputedGamePlan] = useState<GamePlan | null>(null);
   const [screenPhase, setScreenPhase] = useState<"landing" | "upload" | "ready" | "orchestrating" | "game">("landing");
   const [landingModal, setLandingModal] = useState<null | "login" | "join">(null);
+  const [landingModalRole, setLandingModalRole] = useState<"manager" | "student">("manager");
   const [landingModalStep, setLandingModalStep] = useState<"idle" | "loading" | "done">("idle");
+  const [landingModalMode, setLandingModalMode] = useState<"signin" | "signup">("signin");
   const [joinCode, setJoinCode] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authForm, setAuthForm] = useState({ email: "", password: "", fullName: "" });
+  const [currentEnrollmentId, setCurrentEnrollmentId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const isRecordingRef = useRef(false);
@@ -252,6 +262,93 @@ export default function Home() {
   const autoKickoffCallbackRef = useRef<(() => void) | null>(null);
   // Stores prefetched API response promise so the fetch starts while TTS still plays.
   const prefetchedResponseRef = useRef<Promise<Response> | null>(null);
+
+  // ── Auto-redirect: authenticated users go to their dashboard ──
+  useEffect(() => {
+    if (authLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("training")) return; // Don't redirect if testing a training
+    if (isAuthenticated && screenPhase === "landing") {
+      if (isManager) {
+        router.push("/dashboard/manager");
+      } else if (isStudent) {
+        router.push("/dashboard/student");
+      }
+    }
+  }, [authLoading, isAuthenticated, isManager, isStudent, screenPhase, router]);
+
+  // ── Load training from ?training=<id> URL param (manager test mode) ──
+  useEffect(() => {
+    if (authLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const trainingId = params.get("training");
+    const enrollmentParam = params.get("enrollment");
+    if (enrollmentParam) {
+      setCurrentEnrollmentId(enrollmentParam);
+    }
+    if (!trainingId || screenPhase !== "landing") return;
+
+    const fallbackDashboard = enrollmentParam ? "/dashboard/student" : "/dashboard/manager";
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/trainings/${trainingId}`);
+        if (!res.ok) {
+          console.error("[page] Failed to fetch training:", res.status);
+          router.push(fallbackDashboard);
+          return;
+        }
+        const { training } = await res.json();
+        if (!training?.document_text) {
+          router.push(fallbackDashboard);
+          return;
+        }
+
+        setDocumentContext(training.document_text);
+        setDocumentFilename(training.document_filename || "Document");
+
+        // Try to resume saved game state from enrollment
+        if (enrollmentParam) {
+          try {
+            const enrollRes = await fetch(`/api/enrollments/${enrollmentParam}`);
+            if (enrollRes.ok) {
+              const { enrollment } = await enrollRes.json();
+              if (enrollment?.game_state && enrollment.status === "in_progress") {
+                const savedState = enrollment.game_state as MultiAgentGameState;
+                // Build RAG index for future agent interactions
+                ragIndexRef.current = buildRagIndex(training.document_text);
+                setMultiAgentState(savedState);
+                setGameState((prev) => ({ ...prev, isGameStarted: true, dialogue: "" }));
+                setDisplayActiveAgentId(savedState.activeAgentId || "");
+                if (savedState.emotionState) {
+                  setEmotionState(savedState.emotionState);
+                }
+                setSpeakerName(
+                  savedState.agents.find((a) => a.agent.id === savedState.activeAgentId)?.agent.name || "Maître du Jeu",
+                );
+                setSpeakerType("npc");
+                setIsPlayerTurn(true);
+                setScreenPhase("game");
+                return;
+              }
+            }
+          } catch {
+            // Non-blocking — fall through to fresh start
+          }
+        }
+
+        // Fresh start: go through orchestration
+        if (training.game_plan) {
+          setPrecomputedGamePlan(training.game_plan as GamePlan);
+        }
+        setScreenPhase("orchestrating");
+      } catch (err) {
+        console.error("[page] Failed to load training:", err);
+        router.push(fallbackDashboard);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
 
   // ── Mission Feed (orchestration log) ──
   const [missionFeedItems, setMissionFeedItems] = useState<MissionFeedItem[]>([]);
@@ -1066,10 +1163,25 @@ export default function Home() {
       }
 
       setIsReportVisible(true);
+
+      // Auto-save completion for enrolled students
+      if (currentEnrollmentId && isStudent) {
+        fetch(`/api/enrollments/${currentEnrollmentId}/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gameState: multiAgentState,
+            score: multiAgentState?.totalScore ?? 0,
+            totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? 0,
+            correctAnswers: multiAgentState?.interactionState?.completedQAs?.length ?? 0,
+            completed: true,
+          }),
+        }).catch(() => {});
+      }
     };
 
     void run();
-  }, [assessments, documentContext, documentFilename, isGeneratingManagerReport, multiAgentState, simulationEnd?.finalMessage]);
+  }, [assessments, documentContext, documentFilename, isGeneratingManagerReport, multiAgentState, simulationEnd?.finalMessage, currentEnrollmentId, isStudent]);
 
   const handleResumeCurrentTurn = useCallback(async () => {
     if (!gameState.isGameStarted) return;
@@ -1121,6 +1233,59 @@ export default function Home() {
     prevDisplayAgentIdRef.current = "";
   }, []);
 
+  const handleExitToDashboard = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current = null;
+    }
+    ttsGenerationRef.current += 1;
+    ttsQueueRef.current = [];
+    ttsPreloadRef.current.clear();
+    isTtsPlayingRef.current = false;
+    autoKickoffCallbackRef.current = null;
+    router.push(isManager ? "/dashboard/manager" : "/dashboard/student");
+  }, [isManager, router]);
+
+  const handleSaveAndExit = useCallback(async () => {
+    if (!currentEnrollmentId) return;
+    // Stop audio
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.onpause = null;
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current = null;
+    }
+    ttsGenerationRef.current += 1;
+    ttsQueueRef.current = [];
+    ttsPreloadRef.current.clear();
+    isTtsPlayingRef.current = false;
+    autoKickoffCallbackRef.current = null;
+
+    try {
+      await fetch(`/api/enrollments/${currentEnrollmentId}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gameState: multiAgentState,
+          score: multiAgentState?.totalScore ?? 0,
+          totalQuestions: multiAgentState?.gamePlan?.qaPairs?.length ?? 0,
+          correctAnswers: multiAgentState?.interactionState?.completedQAs?.length ?? 0,
+          completed: false,
+        }),
+      });
+    } catch (err) {
+      console.error("[page] Failed to save progress:", err);
+    }
+
+    router.push("/dashboard/student");
+  }, [currentEnrollmentId, multiAgentState, router]);
+
   // Get active agent for display — use displayActiveAgentId so the name only changes
   // when the new agent actually starts speaking, not when the patch is received.
   const displayId = displayActiveAgentId || multiAgentState?.activeAgentId || "";
@@ -1134,24 +1299,111 @@ export default function Home() {
         documentFilename={documentFilename}
         onRestart={handleRestartSimulation}
         multiAgentState={multiAgentState}
+        onExit={isAuthenticated ? handleExitToDashboard : undefined}
       />
+    );
+  }
+
+  // ====== AUTH LOADING SCREEN ======
+  if (authLoading) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "var(--corp-bg)",
+        zIndex: 9999,
+      }}>
+        <div style={{
+          width: 40, height: 40,
+          border: "3px solid rgba(37,99,235,0.2)",
+          borderTop: "3px solid var(--corp-blue)",
+          borderRadius: "50%",
+          animation: "corp-spinner 0.8s linear infinite",
+        }} />
+      </div>
+    );
+  }
+
+  // ====== TRAINING LOADING SCREEN (prevent landing flash when ?training= param) ======
+  if (screenPhase === "landing" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("training")) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0,
+        background: "var(--corp-bg)", display: "flex",
+        alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16,
+      }}>
+        <div style={{
+          width: 40, height: 40,
+          border: "3px solid rgba(37,99,235,0.2)",
+          borderTop: "3px solid var(--corp-blue)",
+          borderRadius: "50%",
+          animation: "corp-spinner 0.8s linear infinite",
+        }} />
+        <p style={{ fontFamily: "var(--corp-font-body)", fontSize: 14, color: "var(--corp-text-secondary)" }}>
+          Chargement de la formation...
+        </p>
+      </div>
     );
   }
 
   // ====== LANDING SCREEN ======
   if (screenPhase === "landing") {
-    const openModal = (type: "login" | "join") => {
+    const openModal = (type: "login" | "join", role: "manager" | "student" = "manager") => {
       setLandingModal(type);
+      setLandingModalRole(role);
       setLandingModalStep("idle");
+      setLandingModalMode("signin");
+      setAuthError(null);
+      setAuthForm({ email: "", password: "", fullName: "" });
       setJoinCode("");
     };
     const closeModal = () => {
       setLandingModal(null);
       setLandingModalStep("idle");
+      setAuthError(null);
     };
-    const handleFakeSubmit = () => {
+    const handleLoginSubmit = async () => {
       setLandingModalStep("loading");
-      setTimeout(() => setLandingModalStep("done"), 1200);
+      setAuthError(null);
+      try {
+        if (landingModalMode === "signup") {
+          await signUp(authForm.email, authForm.password, authForm.fullName, landingModalRole);
+        }
+        const { profile: userProfile } = await signIn(authForm.email, authForm.password);
+        setLandingModalStep("idle");
+        closeModal();
+        // Route based on role
+        if (userProfile?.role === "manager") {
+          router.push("/dashboard/manager");
+        } else {
+          router.push("/dashboard/student");
+        }
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : "Erreur de connexion");
+        setLandingModalStep("done");
+      }
+    };
+    const handleJoinSubmit = async () => {
+      if (!isAuthenticated) {
+        setAuthError("Connectez-vous d'abord pour rejoindre une formation");
+        return;
+      }
+      setLandingModalStep("loading");
+      setAuthError(null);
+      try {
+        const res = await fetch("/api/trainings/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ joinCode: joinCode.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        closeModal();
+        router.push("/dashboard/student");
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : "Code invalide");
+        setLandingModalStep("done");
+      }
     };
 
     return (
@@ -1174,39 +1426,117 @@ export default function Home() {
           <span style={{ fontFamily: "var(--corp-font-heading)", fontSize: 26, color: "var(--corp-navy)" }}>
             YouGotIt
           </span>
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              onClick={() => openModal("login")}
-              style={{
-                background: "transparent",
-                border: "1px solid var(--corp-border)",
-                borderRadius: 8,
-                fontFamily: "var(--corp-font-body)",
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--corp-navy)",
-                padding: "8px 20px",
-                cursor: "pointer",
-              }}
-            >
-              Espace RH
-            </button>
-            <button
-              onClick={() => openModal("join")}
-              style={{
-                background: "transparent",
-                border: "1px solid var(--corp-border)",
-                borderRadius: 8,
-                fontFamily: "var(--corp-font-body)",
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--corp-navy)",
-                padding: "8px 20px",
-                cursor: "pointer",
-              }}
-            >
-              Rejoindre une équipe
-            </button>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            {isAuthenticated && profile ? (
+              <>
+                <span style={{
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 13,
+                  color: "var(--corp-text-secondary)",
+                }}>
+                  {profile.full_name || user?.email}
+                  <span style={{
+                    marginLeft: 8,
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: profile.role === "manager" ? "rgba(37,99,235,0.1)" : "rgba(16,185,129,0.1)",
+                    color: profile.role === "manager" ? "var(--corp-blue)" : "#10B981",
+                    fontWeight: 600,
+                    textTransform: "uppercase" as const,
+                  }}>
+                    {profile.role === "manager" ? "Admin" : "Apprenant"}
+                  </span>
+                </span>
+                {isManager && (
+                  <button
+                    onClick={() => setScreenPhase("upload")}
+                    style={{
+                      background: "var(--corp-blue)",
+                      border: "none",
+                      borderRadius: 8,
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "white",
+                      padding: "8px 20px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Créer une formation
+                  </button>
+                )}
+                {isStudent && (
+                  <button
+                    onClick={() => openModal("join")}
+                    style={{
+                      background: "var(--corp-blue)",
+                      border: "none",
+                      borderRadius: 8,
+                      fontFamily: "var(--corp-font-body)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "white",
+                      padding: "8px 20px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Rejoindre
+                  </button>
+                )}
+                <button
+                  onClick={async () => { await signOut(); }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--corp-border)",
+                    borderRadius: 8,
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--corp-text-secondary)",
+                    padding: "8px 16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Déconnexion
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => openModal("login", "student")}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--corp-border)",
+                    borderRadius: 8,
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--corp-navy)",
+                    padding: "8px 20px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Espace Apprenant
+                </button>
+                <button
+                  onClick={() => openModal("login", "manager")}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--corp-border)",
+                    borderRadius: 8,
+                    fontFamily: "var(--corp-font-body)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--corp-navy)",
+                    padding: "8px 20px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Espace Admin
+                </button>
+              </>
+            )}
           </div>
         </nav>
 
@@ -1273,7 +1603,7 @@ export default function Home() {
                 marginBottom: 40,
               }}
             >
-              Vos équipes apprennent par la mise en situation. Vos RH pilotent les compétences en temps réel.
+              Vos équipes apprennent par la mise en situation. Vos admins pilotent les compétences en temps réel.
             </motion.p>
 
             <motion.button
@@ -1465,21 +1795,37 @@ export default function Home() {
               {landingModal === "login" && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em", color: "var(--corp-blue)", marginBottom: 16 }}>
-                    Espace RH Admin
+                    {landingModalMode === "signup"
+                      ? "Créer un compte"
+                      : landingModalRole === "manager" ? "Espace Admin" : "Espace Apprenant"}
                   </div>
                   <h2 style={{ fontFamily: "var(--corp-font-heading)", fontSize: 28, color: "var(--corp-navy)", margin: "0 0 24px 0", fontWeight: 400 }}>
-                    Connexion
+                    {landingModalMode === "signup" ? "Inscription" : "Connexion"}
                   </h2>
-                  {landingModalStep === "done" ? (
-                    <div style={{
-                      background: "rgba(220,38,38,0.04)",
-                      border: "1px solid rgba(220,38,38,0.15)",
-                      borderRadius: 12,
-                      padding: 16,
-                    }}>
-                      <p style={{ fontSize: 14, color: "var(--corp-danger)", margin: 0, lineHeight: 1.6 }}>
-                        Compte non reconnu. Cette fonctionnalité sera disponible prochainement.
-                      </p>
+                  {landingModalStep === "done" && authError ? (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{
+                        background: "rgba(220,38,38,0.04)",
+                        border: "1px solid rgba(220,38,38,0.15)",
+                        borderRadius: 12,
+                        padding: 16,
+                        marginBottom: 16,
+                      }}>
+                        <p style={{ fontSize: 14, color: "var(--corp-danger)", margin: 0, lineHeight: 1.6 }}>
+                          {authError}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => { setLandingModalStep("idle"); setAuthError(null); }}
+                        style={{
+                          fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
+                          width: "100%", padding: 14,
+                          background: "var(--corp-blue)", color: "white",
+                          border: "none", borderRadius: 8, cursor: "pointer",
+                        }}
+                      >
+                        Réessayer
+                      </button>
                     </div>
                   ) : landingModalStep === "loading" ? (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 0", gap: 12 }}>
@@ -1490,11 +1836,30 @@ export default function Home() {
                         borderRadius: "50%",
                         animation: "corp-spinner 0.8s linear infinite",
                       }} />
-                      <span style={{ fontSize: 13, color: "var(--corp-text-secondary)" }}>Connexion en cours...</span>
+                      <span style={{ fontSize: 13, color: "var(--corp-text-secondary)" }}>
+                        {landingModalMode === "signup" ? "Création du compte..." : "Connexion en cours..."}
+                      </span>
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {landingModalMode === "signup" && (
+                        <input
+                          value={authForm.fullName}
+                          onChange={(e) => setAuthForm(f => ({ ...f, fullName: e.target.value }))}
+                          type="text"
+                          placeholder="Nom complet"
+                          style={{
+                            fontFamily: "var(--corp-font-body)", fontSize: 14,
+                            width: "100%", padding: "12px 16px",
+                            border: "1px solid var(--corp-border)", borderRadius: 8,
+                            background: "var(--corp-bg)", outline: "none",
+                            boxSizing: "border-box", color: "var(--corp-text)",
+                          }}
+                        />
+                      )}
                       <input
+                        value={authForm.email}
+                        onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))}
                         type="email"
                         placeholder="prenom.nom@entreprise.com"
                         style={{
@@ -1506,6 +1871,8 @@ export default function Home() {
                         }}
                       />
                       <input
+                        value={authForm.password}
+                        onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))}
                         type="password"
                         placeholder="Mot de passe"
                         style={{
@@ -1518,15 +1885,34 @@ export default function Home() {
                         }}
                       />
                       <button
-                        onClick={handleFakeSubmit}
+                        onClick={handleLoginSubmit}
+                        disabled={!authForm.email || !authForm.password || (landingModalMode === "signup" && !authForm.fullName)}
                         style={{
                           fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
                           width: "100%", padding: 14,
-                          background: "var(--corp-blue)", color: "white",
-                          border: "none", borderRadius: 8, cursor: "pointer",
+                          background: (!authForm.email || !authForm.password) ? "var(--corp-border)" : "var(--corp-blue)",
+                          color: (!authForm.email || !authForm.password) ? "var(--corp-text-muted)" : "white",
+                          border: "none", borderRadius: 8,
+                          cursor: (!authForm.email || !authForm.password) ? "not-allowed" : "pointer",
                         }}
                       >
-                        Se connecter →
+                        {landingModalMode === "signup" ? "Créer mon compte →" : "Se connecter →"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLandingModalMode(landingModalMode === "signin" ? "signup" : "signin");
+                          setAuthError(null);
+                        }}
+                        style={{
+                          background: "none", border: "none",
+                          fontFamily: "var(--corp-font-body)", fontSize: 13,
+                          color: "var(--corp-blue)", cursor: "pointer",
+                          padding: "4px 0", textAlign: "center" as const,
+                        }}
+                      >
+                        {landingModalMode === "signin"
+                          ? "Pas encore de compte ? Créer un compte"
+                          : "Déjà un compte ? Se connecter"}
                       </button>
                     </div>
                   )}
@@ -1536,65 +1922,110 @@ export default function Home() {
               {landingModal === "join" && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em", color: "var(--corp-blue)", marginBottom: 16 }}>
-                    Accès Équipe
+                    Espace Apprenant
                   </div>
                   <h2 style={{ fontFamily: "var(--corp-font-heading)", fontSize: 28, color: "var(--corp-navy)", margin: "0 0 12px 0", fontWeight: 400 }}>
-                    Rejoindre une équipe
+                    Rejoindre une formation
                   </h2>
-                  <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-                    Entrez le code fourni par votre responsable RH.
-                  </p>
-                  {landingModalStep === "done" ? (
-                    <div style={{
-                      background: "rgba(220,38,38,0.04)",
-                      border: "1px solid rgba(220,38,38,0.15)",
-                      borderRadius: 12,
-                      padding: 16,
-                    }}>
-                      <p style={{ fontSize: 14, color: "var(--corp-danger)", margin: 0, lineHeight: 1.6 }}>
-                        Code équipe invalide ou expiré. Contactez votre responsable RH.
+                  {!isAuthenticated ? (
+                    <div>
+                      <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
+                        Connectez-vous pour rejoindre une formation avec un code.
                       </p>
-                    </div>
-                  ) : landingModalStep === "loading" ? (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 0", gap: 12 }}>
-                      <div style={{
-                        width: 32, height: 32,
-                        border: "3px solid rgba(37,99,235,0.2)",
-                        borderTop: "3px solid var(--corp-blue)",
-                        borderRadius: "50%",
-                        animation: "corp-spinner 0.8s linear infinite",
-                      }} />
-                      <span style={{ fontSize: 13, color: "var(--corp-text-secondary)" }}>Vérification...</span>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <input
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                        placeholder="FORMA-XXXX-XXXX"
-                        style={{
-                          fontFamily: "var(--corp-font-body)", fontSize: 14,
-                          width: "100%", padding: "12px 16px",
-                          border: "1px solid var(--corp-border)", borderRadius: 8,
-                          background: "var(--corp-bg)", outline: "none",
-                          boxSizing: "border-box", color: "var(--corp-text)",
-                          letterSpacing: "0.05em",
-                        }}
-                      />
                       <button
-                        disabled={joinCode.length < 4}
-                        onClick={handleFakeSubmit}
+                        onClick={() => openModal("login", "student")}
                         style={{
                           fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
                           width: "100%", padding: 14,
-                          background: joinCode.length < 4 ? "var(--corp-border)" : "var(--corp-blue)",
-                          color: joinCode.length < 4 ? "var(--corp-text-muted)" : "white",
+                          background: "var(--corp-blue)", color: "white",
                           border: "none", borderRadius: 8,
-                          cursor: joinCode.length < 4 ? "not-allowed" : "pointer",
+                          cursor: "pointer",
                         }}
                       >
-                        Rejoindre →
+                        Se connecter ou créer un compte →
                       </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
+                        Entrez le code fourni par votre administrateur.
+                      </p>
+                      {landingModalStep === "done" && authError ? (
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{
+                            background: "rgba(220,38,38,0.04)",
+                            border: "1px solid rgba(220,38,38,0.15)",
+                            borderRadius: 12,
+                            padding: 16,
+                            marginBottom: 16,
+                          }}>
+                            <p style={{ fontSize: 14, color: "var(--corp-danger)", margin: 0, lineHeight: 1.6 }}>
+                              {authError}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => { setLandingModalStep("idle"); setAuthError(null); }}
+                            style={{
+                              fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
+                              width: "100%", padding: 14,
+                              background: "var(--corp-blue)", color: "white",
+                              border: "none", borderRadius: 8, cursor: "pointer",
+                            }}
+                          >
+                            Réessayer
+                          </button>
+                        </div>
+                      ) : landingModalStep === "loading" ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 0", gap: 12 }}>
+                          <div style={{
+                            width: 32, height: 32,
+                            border: "3px solid rgba(37,99,235,0.2)",
+                            borderTop: "3px solid var(--corp-blue)",
+                            borderRadius: "50%",
+                            animation: "corp-spinner 0.8s linear infinite",
+                          }} />
+                          <span style={{ fontSize: 13, color: "var(--corp-text-secondary)" }}>Inscription en cours...</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                          <input
+                            value={joinCode}
+                            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                            placeholder="ABC123"
+                            maxLength={6}
+                            disabled={!isAuthenticated}
+                            style={{
+                              fontFamily: "var(--corp-font-body)", fontSize: 24,
+                              width: "100%", padding: "16px",
+                              border: "2px solid var(--corp-blue)", borderRadius: 8,
+                              background: "var(--corp-bg)", outline: "none",
+                              boxSizing: "border-box", color: "var(--corp-navy)",
+                              letterSpacing: "0.3em", textAlign: "center" as const,
+                              fontWeight: 700,
+                              opacity: !isAuthenticated ? 0.5 : 1,
+                            }}
+                          />
+                          <button
+                            disabled={joinCode.length < 6 || !isAuthenticated}
+                            onClick={handleJoinSubmit}
+                            style={{
+                              fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
+                              width: "100%", padding: 14,
+                              background: (joinCode.length < 6 || !isAuthenticated) ? "var(--corp-border)" : "var(--corp-blue)",
+                              color: (joinCode.length < 6 || !isAuthenticated) ? "var(--corp-text-muted)" : "white",
+                              border: "none", borderRadius: 8,
+                              cursor: (joinCode.length < 6 || !isAuthenticated) ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Rejoindre →
+                          </button>
+                          {!isAuthenticated && (
+                            <p style={{ fontSize: 12, color: "var(--corp-text-muted)", fontStyle: "italic", margin: "4px 0 0 0" }}>
+                              Connectez-vous pour rejoindre une formation
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1645,7 +2076,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Espace RH
+              Espace Admin
             </button>
           </div>
         </nav>
@@ -1745,7 +2176,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Espace RH
+              Espace Admin
             </button>
           </div>
         </nav>
@@ -1896,6 +2327,7 @@ export default function Home() {
         documentText={documentContext}
         filename={documentFilename}
         onReady={handleOrchestrationReady}
+        precomputedPlan={precomputedGamePlan ?? undefined}
       />
     );
   }
@@ -1937,6 +2369,46 @@ export default function Home() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {isAuthenticated && isManager && (
+              <button
+                onClick={handleExitToDashboard}
+                style={{
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase" as const,
+                  background: "transparent",
+                  color: "rgba(255,255,255,0.6)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+              >
+                Quitter
+              </button>
+            )}
+            {isAuthenticated && isStudent && currentEnrollmentId && gameState.isGameStarted && !gameState.isGameOver && (
+              <button
+                onClick={handleSaveAndExit}
+                style={{
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase" as const,
+                  background: "transparent",
+                  color: "#F59E0B",
+                  border: "1px solid rgba(245,158,11,0.3)",
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+              >
+                Reprendre plus tard
+              </button>
+            )}
             {gameState.isGameStarted && !gameState.isGameOver && (
               <button
                 onClick={handleFinishSimulation}

@@ -1,6 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { AgentEmotion, VoiceType } from "@/app/lib/types";
 import { EMOTION_PARAMS, VOICE_MAP } from "@/app/lib/voice/voices";
+import { createClient } from "@/app/lib/supabase/server";
 
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5";
 const FIXED_NARRATOR_VOICE_ID =
@@ -52,6 +53,12 @@ function sleep(ms: number) {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
   if (!ELEVENLABS_API_KEY) {
     return Response.json({ error: "ELEVENLABS_API_KEY not configured." }, { status: 500 });

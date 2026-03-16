@@ -1,5 +1,6 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prepareGamePlan } from "@/app/lib/agents/prepare";
+import { createClient } from "@/app/lib/supabase/server";
 
 export const maxDuration = 120; // seconds — 3 OpenAI calls
 
@@ -8,6 +9,12 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   let documentText = "";
   let filename = "Document de formation";
 

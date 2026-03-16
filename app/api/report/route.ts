@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/app/lib/supabase/server";
 import { chatCompletion } from "@/app/lib/agents/openai-client";
 import { ManagerAssessment, MultiAgentGameState, SimulationReport, FailurePattern, EmployeeVibe } from "@/app/lib/types";
 
@@ -260,6 +261,12 @@ function sanitizeReport(raw: unknown, fallback: SimulationReport): SimulationRep
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   let fallbackFromPayload: SimulationReport | null = null;
   try {
     let body: ReportRequest;

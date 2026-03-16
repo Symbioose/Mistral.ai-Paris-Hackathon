@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Agent, Scenario, EvaluationTopic, SimulationSetup } from "@/app/lib/types";
+import { Agent, Scenario, EvaluationTopic, SimulationSetup, GamePlan } from "@/app/lib/types";
 
 interface AgentGenerationViewProps {
   documentText: string;
   filename: string;
-  onReady: (setup: SimulationSetup) => void;
+  onReady: (setup: SimulationSetup & { gamePlan?: GamePlan }) => void;
+  precomputedPlan?: GamePlan;
 }
 
 const VOICE_COLORS: Record<string, string> = {
@@ -26,7 +27,7 @@ function getAgentPosition(index: number, total: number, rx: number, ry: number) 
   };
 }
 
-export default function AgentGenerationView({ documentText, filename, onReady }: AgentGenerationViewProps) {
+export default function AgentGenerationView({ documentText, filename, onReady, precomputedPlan }: AgentGenerationViewProps) {
   const [status, setStatus] = useState("Connexion à l'orchestrateur...");
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -65,7 +66,53 @@ export default function AgentGenerationView({ documentText, filename, onReady }:
     } catch { }
   }, []);
 
+  // ── Precomputed plan mode: animate agents without SSE ──
   useEffect(() => {
+    if (!precomputedPlan) return;
+
+    setScenario(precomputedPlan.scenario);
+    setStatus("Chargement du plan pré-calculé...");
+
+    const allAgents = [...precomputedPlan.agents, precomputedPlan.learningAgent];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    allAgents.forEach((agent, idx) => {
+      const timer = setTimeout(() => {
+        setAgents((prev) => [...prev, agent]);
+      }, 400 * (idx + 1));
+      timers.push(timer);
+    });
+
+    const grid: EvaluationTopic[] = precomputedPlan.categories.map((c) => ({
+      topic: c.name,
+      weight: 1,
+      test_method: c.description,
+    }));
+
+    const gridTimer = setTimeout(() => {
+      setEvaluationGrid(grid);
+    }, 400 * allAgents.length + 200);
+    timers.push(gridTimer);
+
+    const readyTimer = setTimeout(() => {
+      setupRef.current = {
+        scenario: precomputedPlan.scenario,
+        agents: allAgents,
+        evaluation_grid: grid,
+      } as SimulationSetup;
+      // Attach gamePlan for handleOrchestrationReady
+      (setupRef.current as SimulationSetup & { gamePlan?: GamePlan }).gamePlan = precomputedPlan;
+      setIsReady(true);
+      setStatus("Simulation prête.");
+    }, 400 * allAgents.length + 500);
+    timers.push(readyTimer);
+
+    return () => timers.forEach(clearTimeout);
+  }, [precomputedPlan]);
+
+  // ── SSE orchestration mode ──
+  useEffect(() => {
+    if (precomputedPlan) return; // Skip SSE when plan is precomputed
     const controller = new AbortController();
     async function startOrchestration() {
       try {
@@ -92,7 +139,7 @@ export default function AgentGenerationView({ documentText, filename, onReady }:
     }
     startOrchestration();
     return () => controller.abort();
-  }, [documentText, filename, processSseBlock]);
+  }, [documentText, filename, processSseBlock, precomputedPlan]);
 
   const handleEnter = useCallback(() => {
     if (setupRef.current) onReady(setupRef.current);
