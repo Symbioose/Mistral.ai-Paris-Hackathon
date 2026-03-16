@@ -132,6 +132,7 @@ interface SkillsReportDashboardProps {
   documentFilename: string | null;
   onRestart: () => void;
   multiAgentState?: MultiAgentGameState | null;
+  onExit?: () => void;
 }
 
 export default function SkillsReportDashboard({
@@ -140,6 +141,7 @@ export default function SkillsReportDashboard({
   documentFilename,
   onRestart,
   multiAgentState,
+  onExit,
 }: SkillsReportDashboardProps) {
   const useMultiAgent = !!multiAgentState && multiAgentState.scores.length > 0;
   const scores = useMultiAgent ? multiAgentState.scores : [];
@@ -251,6 +253,24 @@ export default function SkillsReportDashboard({
             >
               Nouvelle simulation
             </button>
+            {onExit && (
+              <button
+                onClick={onExit}
+                style={{
+                  fontFamily: "var(--corp-font-body)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "10px 20px",
+                  background: "transparent",
+                  color: "var(--corp-navy)",
+                  border: "1px solid var(--corp-border)",
+                  borderRadius: "var(--corp-radius-md)",
+                  cursor: "pointer",
+                }}
+              >
+                Retour au tableau de bord
+              </button>
+            )}
           </div>
         </div>
 
