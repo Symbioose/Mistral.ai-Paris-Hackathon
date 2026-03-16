@@ -586,7 +586,15 @@ export async function POST(req: NextRequest) {
 
       try {
         const reader = textStream.getReader();
+        const streamStart = Date.now();
+        const STREAM_TIMEOUT_MS = 30000;
         while (true) {
+          // GAME-05: Abort if stream stalls for too long
+          if (Date.now() - streamStart > STREAM_TIMEOUT_MS) {
+            console.warn("[chat] Stream timeout after 30s");
+            reader.cancel();
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
           const rawDelta = String(value || "");
