@@ -229,8 +229,8 @@ export default function SimulationEndOverlay({
             }}
           >
             {isGeneratingReport
-              ? "Generation du rapport manager..."
-              : "Pret pour le rapport manager"}
+              ? "Generation du rapport..."
+              : "Pret pour le rapport"}
           </p>
           <div
             style={{
@@ -271,7 +271,7 @@ export default function SimulationEndOverlay({
               cursor: isGeneratingReport ? "not-allowed" : "pointer",
             }}
           >
-            {isGeneratingReport ? "Generation..." : "Voir le rapport manager"}
+            {isGeneratingReport ? "Generation..." : "Voir le rapport"}
           </button>
         </div>
       </div>

@@ -220,6 +220,7 @@ export default function Home() {
   const [precomputedGamePlan, setPrecomputedGamePlan] = useState<GamePlan | null>(null);
   const [screenPhase, setScreenPhase] = useState<"landing" | "upload" | "ready" | "orchestrating" | "game">("landing");
   const [landingModal, setLandingModal] = useState<null | "login" | "join">(null);
+  const [landingModalRole, setLandingModalRole] = useState<"manager" | "student">("manager");
   const [landingModalStep, setLandingModalStep] = useState<"idle" | "loading" | "done">("idle");
   const [landingModalMode, setLandingModalMode] = useState<"signin" | "signup">("signin");
   const [joinCode, setJoinCode] = useState("");
@@ -1290,8 +1291,9 @@ export default function Home() {
 
   // ====== LANDING SCREEN ======
   if (screenPhase === "landing") {
-    const openModal = (type: "login" | "join") => {
+    const openModal = (type: "login" | "join", role: "manager" | "student" = "manager") => {
       setLandingModal(type);
+      setLandingModalRole(role);
       setLandingModalStep("idle");
       setLandingModalMode("signin");
       setAuthError(null);
@@ -1308,7 +1310,7 @@ export default function Home() {
       setAuthError(null);
       try {
         if (landingModalMode === "signup") {
-          await signUp(authForm.email, authForm.password, authForm.fullName, "manager");
+          await signUp(authForm.email, authForm.password, authForm.fullName, landingModalRole);
         }
         const { profile: userProfile } = await signIn(authForm.email, authForm.password);
         setLandingModalStep("idle");
@@ -1386,7 +1388,7 @@ export default function Home() {
                     fontWeight: 600,
                     textTransform: "uppercase" as const,
                   }}>
-                    {profile.role === "manager" ? "RH" : "Apprenant"}
+                    {profile.role === "manager" ? "Admin" : "Apprenant"}
                   </span>
                 </span>
                 {isManager && (
@@ -1445,7 +1447,7 @@ export default function Home() {
             ) : (
               <>
                 <button
-                  onClick={() => openModal("login")}
+                  onClick={() => openModal("login", "student")}
                   style={{
                     background: "transparent",
                     border: "1px solid var(--corp-border)",
@@ -1458,10 +1460,10 @@ export default function Home() {
                     cursor: "pointer",
                   }}
                 >
-                  Espace RH
+                  Espace Apprenant
                 </button>
                 <button
-                  onClick={() => openModal("join")}
+                  onClick={() => openModal("login", "manager")}
                   style={{
                     background: "transparent",
                     border: "1px solid var(--corp-border)",
@@ -1474,7 +1476,7 @@ export default function Home() {
                     cursor: "pointer",
                   }}
                 >
-                  Rejoindre une équipe
+                  Espace Admin
                 </button>
               </>
             )}
@@ -1544,7 +1546,7 @@ export default function Home() {
                 marginBottom: 40,
               }}
             >
-              Vos équipes apprennent par la mise en situation. Vos RH pilotent les compétences en temps réel.
+              Vos équipes apprennent par la mise en situation. Vos admins pilotent les compétences en temps réel.
             </motion.p>
 
             <motion.button
@@ -1736,7 +1738,9 @@ export default function Home() {
               {landingModal === "login" && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em", color: "var(--corp-blue)", marginBottom: 16 }}>
-                    {landingModalMode === "signup" ? "Créer un compte" : "Espace RH Admin"}
+                    {landingModalMode === "signup"
+                      ? "Créer un compte"
+                      : landingModalRole === "manager" ? "Espace Admin" : "Espace Apprenant"}
                   </div>
                   <h2 style={{ fontFamily: "var(--corp-font-heading)", fontSize: 28, color: "var(--corp-navy)", margin: "0 0 24px 0", fontWeight: 400 }}>
                     {landingModalMode === "signup" ? "Inscription" : "Connexion"}
@@ -1861,91 +1865,33 @@ export default function Home() {
               {landingModal === "join" && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em", color: "var(--corp-blue)", marginBottom: 16 }}>
-                    Accès Équipe
+                    Espace Apprenant
                   </div>
                   <h2 style={{ fontFamily: "var(--corp-font-heading)", fontSize: 28, color: "var(--corp-navy)", margin: "0 0 12px 0", fontWeight: 400 }}>
-                    {!isAuthenticated ? "Créer un compte" : "Rejoindre une formation"}
+                    Rejoindre une formation
                   </h2>
                   {!isAuthenticated ? (
                     <div>
                       <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-                        Créez votre compte pour accéder à vos formations.
+                        Connectez-vous pour rejoindre une formation avec un code.
                       </p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        <input
-                          value={authForm.fullName}
-                          onChange={(e) => setAuthForm(f => ({ ...f, fullName: e.target.value }))}
-                          type="text"
-                          placeholder="Nom complet"
-                          style={{
-                            fontFamily: "var(--corp-font-body)", fontSize: 14,
-                            width: "100%", padding: "12px 16px",
-                            border: "1px solid var(--corp-border)", borderRadius: 8,
-                            background: "var(--corp-bg)", outline: "none",
-                            boxSizing: "border-box", color: "var(--corp-text)",
-                          }}
-                        />
-                        <input
-                          value={authForm.email}
-                          onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))}
-                          type="email"
-                          placeholder="prenom.nom@entreprise.com"
-                          style={{
-                            fontFamily: "var(--corp-font-body)", fontSize: 14,
-                            width: "100%", padding: "12px 16px",
-                            border: "1px solid var(--corp-border)", borderRadius: 8,
-                            background: "var(--corp-bg)", outline: "none",
-                            boxSizing: "border-box", color: "var(--corp-text)",
-                          }}
-                        />
-                        <input
-                          value={authForm.password}
-                          onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))}
-                          type="password"
-                          placeholder="Mot de passe"
-                          style={{
-                            fontFamily: "var(--corp-font-body)", fontSize: 14,
-                            width: "100%", padding: "12px 16px",
-                            border: "1px solid var(--corp-border)", borderRadius: 8,
-                            background: "var(--corp-bg)", outline: "none",
-                            boxSizing: "border-box", color: "var(--corp-text)",
-                          }}
-                        />
-                        {authError && (
-                          <p style={{ fontSize: 13, color: "var(--corp-danger)", margin: 0 }}>{authError}</p>
-                        )}
-                        <button
-                          disabled={!authForm.email || !authForm.password || !authForm.fullName}
-                          onClick={async () => {
-                            setAuthError(null);
-                            setLandingModalStep("loading");
-                            try {
-                              await signUp(authForm.email, authForm.password, authForm.fullName, "student");
-                              await signIn(authForm.email, authForm.password);
-                              closeModal();
-                              router.push("/dashboard/student");
-                            } catch (err) {
-                              setAuthError(err instanceof Error ? err.message : "Erreur");
-                              setLandingModalStep("idle");
-                            }
-                          }}
-                          style={{
-                            fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
-                            width: "100%", padding: 14,
-                            background: (!authForm.email || !authForm.password || !authForm.fullName) ? "var(--corp-border)" : "var(--corp-blue)",
-                            color: (!authForm.email || !authForm.password || !authForm.fullName) ? "var(--corp-text-muted)" : "white",
-                            border: "none", borderRadius: 8,
-                            cursor: (!authForm.email || !authForm.password || !authForm.fullName) ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          Créer un compte →
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => openModal("login", "student")}
+                        style={{
+                          fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
+                          width: "100%", padding: 14,
+                          background: "var(--corp-blue)", color: "white",
+                          border: "none", borderRadius: 8,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Se connecter ou créer un compte →
+                      </button>
                     </div>
                   ) : (
                     <div>
                       <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-                        Entrez le code fourni par votre responsable RH.
+                        Entrez le code fourni par votre administrateur.
                       </p>
                       {landingModalStep === "done" && authError ? (
                         <div style={{ marginBottom: 16 }}>
@@ -2073,7 +2019,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Espace RH
+              Espace Admin
             </button>
           </div>
         </nav>
@@ -2173,7 +2119,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Espace RH
+              Espace Admin
             </button>
           </div>
         </nav>
