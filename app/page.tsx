@@ -219,7 +219,7 @@ export default function Home() {
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
   const [precomputedGamePlan, setPrecomputedGamePlan] = useState<GamePlan | null>(null);
   const [screenPhase, setScreenPhase] = useState<"landing" | "upload" | "ready" | "orchestrating" | "game">("landing");
-  const [landingModal, setLandingModal] = useState<null | "login" | "join">(null);
+  const [landingModal, setLandingModal] = useState<null | "role-picker" | "login" | "join">(null);
   const [landingModalRole, setLandingModalRole] = useState<"manager" | "student">("manager");
   const [landingModalStep, setLandingModalStep] = useState<"idle" | "loading" | "done">("idle");
   const [landingModalMode, setLandingModalMode] = useState<"signin" | "signup">("signin");
@@ -1612,7 +1612,7 @@ export default function Home() {
               transition={{ delay: 0.3, duration: 0.5 }}
               whileHover={{ scale: 1.02, boxShadow: "0 14px 28px -6px rgba(37,99,235,0.25)" }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setScreenPhase("upload")}
+              onClick={() => setLandingModal("role-picker")}
               style={{
                 background: "var(--corp-blue)",
                 color: "white",
@@ -1733,7 +1733,7 @@ export default function Home() {
           padding: "20px 0 32px",
           borderTop: "1px solid var(--corp-border-light)",
         }}>
-          {["Powered by AI", "ElevenLabs Voice AI", "Enterprise-grade"].map((text, i) => (
+          {["Powered by OpenAI", "ElevenLabs Voice AI", "Enterprise-grade"].map((text, i) => (
             <span key={text} style={{ display: "flex", alignItems: "center", gap: 24 }}>
               {i > 0 && <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--corp-border)", display: "inline-block" }} />}
               <span style={{ fontFamily: "var(--corp-font-body)", fontSize: 12, color: "var(--corp-text-muted)", letterSpacing: "0.02em" }}>
@@ -1769,7 +1769,7 @@ export default function Home() {
                 borderRadius: 20,
                 boxShadow: "var(--corp-shadow-xl)",
                 padding: "40px 36px",
-                width: 420,
+                width: landingModal === "role-picker" ? 520 : 420,
                 maxWidth: "90vw",
                 position: "relative",
                 fontFamily: "var(--corp-font-body)",
@@ -1791,6 +1791,72 @@ export default function Home() {
               >
                 ✕
               </button>
+
+              {landingModal === "role-picker" && (
+                <div>
+                  <div style={{ textAlign: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.12em", color: "var(--corp-blue)", marginBottom: 16 }}>
+                      Bienvenue sur YouGotIt
+                    </div>
+                    <h2 style={{ fontFamily: "var(--corp-font-heading)", fontSize: 28, color: "var(--corp-navy)", margin: "0 0 8px 0", fontWeight: 400 }}>
+                      Comment souhaitez-vous continuer ?
+                    </h2>
+                    <p style={{ fontSize: 14, color: "var(--corp-text-secondary)", margin: "0 0 32px 0", lineHeight: 1.5 }}>
+                      Choisissez votre espace pour commencer.
+                    </p>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    {/* Admin card */}
+                    <motion.button
+                      whileHover={{ scale: 1.03, borderColor: "var(--corp-blue)" }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => openModal("login", "manager")}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                        padding: "28px 20px",
+                        background: "var(--corp-bg-subtle)",
+                        border: "2px solid var(--corp-border)",
+                        borderRadius: 16,
+                        cursor: "pointer",
+                        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                        fontFamily: "var(--corp-font-body)",
+                      }}
+                    >
+                      <span style={{ fontSize: 36 }}>👨‍💼</span>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: "var(--corp-navy)" }}>
+                        Espace Admin
+                      </span>
+                      <span style={{ fontSize: 13, color: "var(--corp-text-secondary)", lineHeight: 1.4, textAlign: "center" }}>
+                        Créer et piloter vos formations
+                      </span>
+                    </motion.button>
+                    {/* Student card */}
+                    <motion.button
+                      whileHover={{ scale: 1.03, borderColor: "var(--corp-blue)" }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => openModal("login", "student")}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                        padding: "28px 20px",
+                        background: "var(--corp-bg-subtle)",
+                        border: "2px solid var(--corp-border)",
+                        borderRadius: 16,
+                        cursor: "pointer",
+                        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                        fontFamily: "var(--corp-font-body)",
+                      }}
+                    >
+                      <span style={{ fontSize: 36 }}>🎓</span>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: "var(--corp-navy)" }}>
+                        Espace Apprenant
+                      </span>
+                      <span style={{ fontSize: 13, color: "var(--corp-text-secondary)", lineHeight: 1.4, textAlign: "center" }}>
+                        Rejoindre une session de formation
+                      </span>
+                    </motion.button>
+                  </div>
+                </div>
+              )}
 
               {landingModal === "login" && (
                 <div>
