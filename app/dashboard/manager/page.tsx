@@ -222,6 +222,7 @@ export default function ManagerDashboard() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.2 }}
+          data-stats-grid
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -369,6 +370,7 @@ export default function ManagerDashboard() {
         <EmptyState onCreateClick={() => setIsModalOpen(true)} />
       ) : (
         <motion.div
+          data-cards-grid
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))",

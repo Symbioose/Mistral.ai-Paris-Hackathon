@@ -155,6 +155,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }}>
       {/* Sidebar */}
       <motion.aside
+        data-sidebar
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
         animate={{ width: sidebarHovered ? 240 : 72 }}
@@ -304,7 +305,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </motion.aside>
 
       {/* Main content */}
-      <main style={{
+      <main data-dashboard-content style={{
         flex: 1,
         overflow: "auto",
         background: "var(--corp-bg-subtle)",
