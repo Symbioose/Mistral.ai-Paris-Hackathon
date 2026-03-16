@@ -22,6 +22,7 @@ import MissionFeed from "@/app/components/MissionFeed";
 import AgentTransitionOverlay from "@/app/components/AgentTransitionOverlay";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useRouter } from "next/navigation";
+import { sfxCleanup } from "@/app/lib/sfx";
 
 // Imported dynamically to avoid server-side issues
 async function buildAgentPromptClient(
@@ -237,6 +238,16 @@ export default function Home() {
   const ttsPreloadRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const feedSeqRef = useRef(0);
 
+  /** Revoke all blob URLs in ttsPreloadRef before clearing the map. */
+  const clearTtsPreloadWithRevoke = useCallback(() => {
+    for (const promise of ttsPreloadRef.current.values()) {
+      promise.then((url) => {
+        if (url) URL.revokeObjectURL(url);
+      }).catch(() => {});
+    }
+    ttsPreloadRef.current.clear();
+  }, []);
+
   // Emotion visual feedback state (from backend meta events)
   const [emotionState, setEmotionState] = useState<EmotionState>({
     current: "neutral",
@@ -429,6 +440,43 @@ export default function Home() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
+
+  // PERF-01 + GAME-06: Master cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Stop audio playback
+      if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onpause = null;
+        audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current = null;
+      }
+
+      // Revoke all blob URLs in the TTS preload cache before clearing
+      for (const promise of ttsPreloadRef.current.values()) {
+        promise.then((url) => {
+          if (url) URL.revokeObjectURL(url);
+        }).catch(() => {});
+      }
+      ttsPreloadRef.current.clear();
+
+      // Clear TTS pipeline
+      ttsGenerationRef.current += 1;
+      ttsQueueRef.current = [];
+      isTtsPlayingRef.current = false;
+
+      // Clear auto-kickoff refs (GAME-06)
+      autoKickoffCallbackRef.current = null;
+      autoKickoffStateRef.current = null;
+      autoKickoffFiredRef.current = null;
+      prefetchedResponseRef.current = null;
+
+      // Close shared AudioContext (PERF-04)
+      sfxCleanup();
+    };
+  }, []);
 
   const playAudio = useCallback((b64: string) => {
     if (isRecordingRef.current) return;
@@ -643,7 +691,7 @@ export default function Home() {
       ttsGenerationRef.current += 1;
       const currentTtsGeneration = ttsGenerationRef.current;
       ttsQueueRef.current = [];
-      ttsPreloadRef.current.clear();
+      clearTtsPreloadWithRevoke();
       if (audioRef.current) {
         audioRef.current.onended = null;
         audioRef.current.onerror = null;
@@ -690,6 +738,16 @@ export default function Home() {
       let lastTokenText = "";
       let ttsBuffer = "";
       const suppressCurrentTurnOutput = false;
+
+      // PERF-05: Abort if no data received for 45 seconds
+      let lastDataTime = Date.now();
+      const staleCheckInterval = setInterval(() => {
+        if (Date.now() - lastDataTime > 45000) {
+          console.warn("[page] SSE reader stalled for 45s, aborting");
+          abortController.abort();
+          clearInterval(staleCheckInterval);
+        }
+      }, 5000);
 
       // (narrator text is now handled inline by splitTtsByStageDirections during streaming)
 
@@ -774,9 +832,8 @@ export default function Home() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
+        if (done) break;
+        lastDataTime = Date.now(); // PERF-05: reset stale timer
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n\n");
@@ -784,6 +841,8 @@ export default function Home() {
 
         for (const line of lines) handleSseBlock(line);
       }
+
+      clearInterval(staleCheckInterval); // PERF-05
 
       // Critical: process any trailing SSE block left in buffer when stream closes.
       if (buffer.trim().length > 0) {
@@ -1131,7 +1190,7 @@ export default function Home() {
       }
       ttsGenerationRef.current += 1;
       ttsQueueRef.current = [];
-      ttsPreloadRef.current.clear();
+      clearTtsPreloadWithRevoke();
       isTtsPlayingRef.current = false;
       autoKickoffCallbackRef.current = null;
 
@@ -1204,7 +1263,7 @@ export default function Home() {
     // Clear TTS pipeline completely
     ttsGenerationRef.current += 1;
     ttsQueueRef.current = [];
-    ttsPreloadRef.current.clear();
+    clearTtsPreloadWithRevoke();
     isTtsPlayingRef.current = false;
     autoKickoffCallbackRef.current = null;
     autoKickoffStateRef.current = null;
@@ -1244,7 +1303,7 @@ export default function Home() {
     }
     ttsGenerationRef.current += 1;
     ttsQueueRef.current = [];
-    ttsPreloadRef.current.clear();
+    clearTtsPreloadWithRevoke();
     isTtsPlayingRef.current = false;
     autoKickoffCallbackRef.current = null;
     router.push(isManager ? "/dashboard/manager" : "/dashboard/student");
@@ -1263,7 +1322,7 @@ export default function Home() {
     }
     ttsGenerationRef.current += 1;
     ttsQueueRef.current = [];
-    ttsPreloadRef.current.clear();
+    clearTtsPreloadWithRevoke();
     isTtsPlayingRef.current = false;
     autoKickoffCallbackRef.current = null;
 
@@ -2915,7 +2974,7 @@ export default function Home() {
                   if (isRecording) {
                     ttsGenerationRef.current += 1;
                     ttsQueueRef.current = [];
-                    ttsPreloadRef.current.clear();
+                    clearTtsPreloadWithRevoke();
                     isTtsPlayingRef.current = false;
                   }
                 }}
