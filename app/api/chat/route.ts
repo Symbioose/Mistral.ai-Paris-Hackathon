@@ -250,10 +250,16 @@ export async function POST(req: NextRequest) {
   let speakerType: "narrator" | "client" | "learning" = "client";
 
   if (!gamePlan || !interactionState || !currentQA) {
-    // Fallback: no game plan, just have the agent talk
-    agentPrompt = isKickoff
-      ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
-      : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
+    // GAME-02: Fallback with turn limit to prevent infinite loop
+    const fallbackTurnCount = gameState.conversationHistory.filter((m) => m.role === "user").length;
+    if (fallbackTurnCount >= 10) {
+      simulationComplete = true;
+      agentPrompt = "La simulation est terminee. Merci pour votre participation. 10 mots max.";
+    } else {
+      agentPrompt = isKickoff
+        ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
+        : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
+    }
   } else if (phase === "COMPLETE") {
     agentPrompt = "La simulation est terminee. Donne un bilan encourageant. 15 mots max.";
     simulationComplete = true;
