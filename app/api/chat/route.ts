@@ -165,22 +165,27 @@ JSON strict uniquement:
         feedback: String(parsed.feedback || ""),
       };
     } catch {
-      // Keyword fallback
+      // Keyword fallback — require minimum answer length + keyword presence
       const lower = playerMessage.toLowerCase();
       const matched = qa.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+      const hasMinLength = playerMessage.trim().length >= 15;
+      const hasEnoughKeywords = matched.length >= Math.min(2, qa.keywords.length);
+      const isCorrect = hasMinLength && (hasEnoughKeywords || (matched.length >= 1 && playerMessage.trim().length >= 30));
       return {
-        correct: matched.length >= 1,
-        feedback: matched.length >= 1 ? "Mots-cles detectes" : "Aucun mot-cle trouve",
+        correct: isCorrect,
+        feedback: isCorrect ? "Mots-cles detectes" : "Reponse insuffisante",
       };
     }
   } catch (err) {
-    // On API error, fall back to keyword matching rather than auto-passing
     console.error("[evaluateAnswer] API error, falling back to keyword match:", err);
     const lower = playerMessage.toLowerCase();
     const matched = qa.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+    const hasMinLength = playerMessage.trim().length >= 15;
+    const hasEnoughKeywords = matched.length >= Math.min(2, qa.keywords.length);
+    const isCorrect = hasMinLength && (hasEnoughKeywords || (matched.length >= 1 && playerMessage.trim().length >= 30));
     return {
-      correct: matched.length >= 1,
-      feedback: matched.length >= 1 ? "Mots-cles detectes (mode secours)" : "Evaluation indisponible — aucun mot-cle trouve",
+      correct: isCorrect,
+      feedback: isCorrect ? "Mots-cles detectes (mode secours)" : "Evaluation indisponible — reponse insuffisante",
     };
   }
 }
