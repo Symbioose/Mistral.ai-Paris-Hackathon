@@ -36,10 +36,10 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      // Dynamic import — pdf-parse exports differ between CJS/ESM builds
+      // Dynamic import — pdf-parse exports PDFParse as a named export
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pdfMod: any = await import("pdf-parse");
-      const pdfParse = pdfMod.default ?? pdfMod;
+      const pdfParse = pdfMod.PDFParse ?? pdfMod.default ?? pdfMod;
       const parsed = await pdfParse(buffer);
       text = parsed.text;
     } else {
