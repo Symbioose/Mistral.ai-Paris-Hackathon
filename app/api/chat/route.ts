@@ -270,14 +270,14 @@ export async function POST(req: NextRequest) {
     const fallbackTurnCount = gameState.conversationHistory.filter((m) => m.role === "user").length;
     if (fallbackTurnCount >= 10) {
       simulationComplete = true;
-      agentPrompt = "La simulation est terminee. Merci pour votre participation. 10 mots max.";
+      agentPrompt = "La simulation est terminee. Remercie le joueur chaleureusement en 2 phrases.";
     } else {
       agentPrompt = isKickoff
-        ? "Presente-toi brievement et pose une premiere question au joueur. 10 mots max."
-        : `Le joueur a dit: "${safePlayerMessage}". Reagis ultra-brievement et pose une question. 10 mots max.`;
+        ? "Presente-toi en une phrase et pose une premiere question au joueur. Sois naturel et engageant."
+        : `Le joueur a dit: "${safePlayerMessage}". Reagis naturellement et pose une question de suivi.`;
     }
   } else if (phase === "COMPLETE") {
-    agentPrompt = "La simulation est terminee. Donne un bilan encourageant. 15 mots max.";
+    agentPrompt = "La simulation est terminee. Felicite le joueur et fais un bilan encourageant en 2-3 phrases.";
     simulationComplete = true;
   } else if (phase === "LEARNING") {
     speakerType = "learning";
@@ -290,7 +290,7 @@ export async function POST(req: NextRequest) {
         switchToAgentId = catAgent.id;
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
-        agentPrompt = `Tres bien, le joueur a compris ! Dis-lui brievement que c'est bon et que tu le repasses a ${catAgent.name} pour la suite. Exemple: "Parfait ! Je vous repasse ${catAgent.name}." 10 mots max.`;
+        agentPrompt = `Le joueur a compris l'explication. Encourage-le brievement et fais une transition naturelle vers ${catAgent.name} qui va reprendre. Exemple : "Tres bien, vous avez saisi l'essentiel ! Je vous laisse avec ${catAgent.name} pour continuer."`;
 
         // Emotion: learning complete
         currentEmotion = computeNextEmotion(currentEmotion, { type: "learning_complete" });
@@ -300,13 +300,13 @@ export async function POST(req: NextRequest) {
       const sourceRef = currentQA.source_excerpt
         ? `\n\nEXTRAIT DU DOCUMENT SOURCE: "${currentQA.source_excerpt}"\n\nBase ton explication UNIQUEMENT sur cet extrait du document. Ne donne pas d'information qui n'est pas dans le document.`
         : "";
-      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique pourquoi brievement en citant le document. Termine par "Compris ?" ou equivalent. 20 mots max.`;
+      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine par "Compris ?" ou une question de verification equivalente.`;
     } else {
       // Player said something but didn't confirm — continue explaining
       const sourceRef = currentQA.source_excerpt
         ? ` Rappel — le document dit: "${currentQA.source_excerpt}".`
         : "";
-      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication brievement en te basant sur le document.${sourceRef} Redemande s'il a compris. 15 mots max.`;
+      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication en te basant sur le document.${sourceRef} Reformule si besoin pour etre plus claire. Redemande s'il a compris.`;
     }
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
@@ -314,9 +314,9 @@ export async function POST(req: NextRequest) {
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
 
     if (isFirst) {
-      agentPrompt = `${situation}\nCommence par une courte didascalie entre *asterisques* pour planter le decor (1 phrase, ambiance, lieu). Puis presente-toi en 1 phrase et pose naturellement: "${currentQA.question}". Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 1 a 2 phrases). Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
     } else {
-      agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui fait avancer l'histoire (1 phrase: transition, ambiance, detail de scene). Puis pose naturellement: "${currentQA.question}". Ne donne JAMAIS la reponse.`;
+      agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui fait avancer la scene (transition, nouveau detail d'ambiance, action d'un personnage — 1 a 2 phrases). Puis enchaine naturellement avec la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse.`;
     }
   } else {
     // ASKING or RE_ASKING — player answered, evaluate
@@ -350,7 +350,7 @@ export async function POST(req: NextRequest) {
         // All done!
         nextState.phase = "COMPLETE";
         simulationComplete = true;
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de fin de scene*. Felicite-le et conclus la simulation. 20 mots max.`;
+        agentPrompt = `Le joueur a bien repondu. *Didascalie de fin de scene qui conclut l'histoire*. Felicite-le chaleureusement et conclus la simulation avec un mot d'encouragement.`;
       } else if (next.categoryChanged) {
         // Category done — switch agent
         nextState.currentCategoryIndex = next.nextCategoryIndex;
@@ -369,7 +369,7 @@ export async function POST(req: NextRequest) {
         // Emotion resets on act change
         currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
 
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de transition* puis felicite-le brievement et passe la main a ${nextAgent?.name || "ton collegue"}. Exemple: "*Il hoche la tete, satisfait.* Bien joue ! Je vous laisse avec ${nextAgent?.name || "mon collegue"}."  Ne depasse pas 20 mots.`;
+        agentPrompt = `Le joueur a bien repondu. *Didascalie de transition qui fait evoluer la scene*. Felicite-le et passe naturellement la main a ${nextAgent?.name || "ton collegue"}. Exemple: "*Il hoche la tete, visiblement satisfait.* Bien joue, c'etait la bonne approche. Je vous laisse avec ${nextAgent?.name || "mon collegue"} pour la suite."`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -379,7 +379,7 @@ export async function POST(req: NextRequest) {
         const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
 
         const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-        agentPrompt = `Bonne reponse, dis-le brievement. ${nextSituation}\nAjoute une courte didascalie *entre asterisques* pour faire avancer la scene, puis pose naturellement: "${nextQA?.question || ""}". Ne donne JAMAIS la reponse.`;
+        agentPrompt = `Bonne reponse ! Reagis positivement en une phrase. ${nextSituation}\n*Didascalie qui fait avancer la scene*. Puis enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
       }
     } else {
       // Wrong answer
@@ -400,7 +400,7 @@ export async function POST(req: NextRequest) {
         if (!next.hasNext) {
           nextState.phase = "COMPLETE";
           simulationComplete = true;
-          agentPrompt = "Pas grave, on termine la. Bilan final en 15 mots max.";
+          agentPrompt = "Ce n'est pas grave, on a fait le tour. Fais un bilan final bienveillant et encourage le joueur a revoir les points difficiles.";
         } else if (next.categoryChanged) {
           nextState.currentCategoryIndex = next.nextCategoryIndex;
           nextState.currentQAIndex = next.nextQAIndex;
@@ -410,7 +410,7 @@ export async function POST(req: NextRequest) {
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
           currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
-          agentPrompt = `On avance. Passe brievement la main a ${nextAgent?.name || "ton collegue"}. 10 mots max.`;
+          agentPrompt = `On avance a la suite. Fais une transition naturelle et passe la main a ${nextAgent?.name || "ton collegue"}. Sois encourageant malgre l'erreur.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
@@ -418,7 +418,7 @@ export async function POST(req: NextRequest) {
           nextState.phase = "ASKING";
           const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
           const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-          agentPrompt = `Pas grave, on continue. ${nextSituation}\nQuestion: "${nextQA?.question || ""}". 25 mots max.`;
+          agentPrompt = `Ce n'est pas grave, on continue. ${nextSituation}\n*Courte didascalie de transition*. Enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
         }
       } else if (interactionState.failCount === 0) {
         // First fail — rephrase
@@ -430,7 +430,7 @@ export async function POST(req: NextRequest) {
         currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 1 });
 
         const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
-        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reformule la question differemment pour l'aider a reflechir: "${currentQA.question}". NE DONNE PAS LA REPONSE, oriente seulement.`;
+        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reagis avec empathie, donne un indice ou une piste de reflexion, puis reformule la question differemment: "${currentQA.question}". INTERDIT de donner la reponse, meme partiellement. Oriente la reflexion du joueur sans reveler la solution.`;
       } else {
         // Second fail — switch to learning mode
         if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
@@ -444,7 +444,7 @@ export async function POST(req: NextRequest) {
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction* puis passe naturellement la main a ${gamePlan.learningAgent.name}. Exemple: "*Il soupire.* Je laisse ${gamePlan.learningAgent.name} vous expliquer." 20 mots max.`;
+        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction (frustration ou compassion selon ta personnalite)*. Passe naturellement la main a ${gamePlan.learningAgent.name} pour qu'elle explique. Exemple: "*Il soupire, visiblement preoccupe.* Bon, je vais laisser ${gamePlan.learningAgent.name} vous expliquer ca plus en detail."`;
       }
     }
   }
@@ -547,10 +547,10 @@ export async function POST(req: NextRequest) {
       role: "system",
       content: `REGLES DE FORMAT:
 - Pas de markdown.
-- Utilise des *asterisques* pour les didascalies courtes: ambiance, decor, sons, gestes (ex: *Le telephone sonne sur le bureau*, *Il fronce les sourcils*). 10 mots max par didascalie.
+- Utilise des *asterisques* pour les didascalies: ambiance, decor, sons, gestes, details de scene (ex: *Le telephone sonne sur le bureau encombre de dossiers*, *Il fronce les sourcils en parcourant le rapport*). Les didascalies peuvent decrire l'environnement pour immerger le joueur dans une situation d'entreprise realiste.
 - Tes PAROLES de personnage vont HORS asterisques, sans guillemets.
-- Ne donne JAMAIS la reponse dans ta question.
-- 40 MOTS MAXIMUM au total (didascalie + paroles).${sharedMemoryContext}`,
+- INTERDICTION ABSOLUE : ne revele jamais la reponse attendue dans tes paroles. Tu poses des questions, tu ne donnes pas les solutions.
+- 80 MOTS MAXIMUM au total (didascalies + paroles).${sharedMemoryContext}`,
     },
     ...safeHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "system", content: agentPrompt },
@@ -568,7 +568,7 @@ export async function POST(req: NextRequest) {
     model: streamModel,
     messages,
     temperature: 0.6,
-    maxTokens: 250,
+    maxTokens: 400,
   });
 
   const encoder = new TextEncoder();

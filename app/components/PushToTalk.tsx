@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDeepgramSTT } from "@/app/hooks/useDeepgramSTT";
 
+const MAX_WORDS = 100;
+
+function truncateToWordLimit(text: string): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= MAX_WORDS) return text.trim();
+  return words.slice(0, MAX_WORDS).join(" ");
+}
+
 interface PushToTalkProps {
   onSpeechResult: (text: string) => void;
   disabled: boolean;
@@ -64,7 +72,7 @@ export default function PushToTalk({
     isPressedRef.current = false;
     setIsPressed(false);
     stopRecording();
-    const finalText = transcriptRef.current.trim();
+    const finalText = truncateToWordLimit(transcriptRef.current);
     if (finalText) {
       onSpeechResult(finalText);
     }
