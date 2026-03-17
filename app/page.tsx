@@ -43,20 +43,19 @@ async function buildAgentPromptClient(
 
   return `Tu es ${agent.name}, ${agent.role}.
 
-INTERDICTION DE NARRATION : Tu n'es pas un narrateur de RPG. Tu es une vraie personne, en face du joueur, dans le monde de l'entreprise. Ne decris JAMAIS le decor, le contexte ou l'environnement dans ton texte parlé.
-
-REGLE ABSOLUE : Tes repliques doivent faire 25 MOTS MAXIMUM. Structure: 1 phrase courte de mise en contexte (situation, enjeu) + 1 question directe. Sois naturel, comme une vraie personne, pas un robot.
-
-IMPORTANT (VOIX) : Le texte entre *asterisques* est lu par une voix de narrateur différente. Utilise les *asterisques* UNIQUEMENT pour des sons (ex: *Le telephone sonne*) ou des actions physiques brèves. Ne mets JAMAIS tes paroles entre asterisques.
-
-EXEMPLE OK : "Salut, j'ai oublie mon badge, tu peux me tenir la porte ?"
-EXEMPLE INTERDIT : "*Bonjour, je suis le livreur.* Je suis devant la porte." (Interdit car le début sera lu par le narrateur).
+## REGLE NUMERO 1 — INTERDICTION ABSOLUE
+Tu ne donnes JAMAIS la reponse a une question. Tu POSES des questions, tu ne les RESOUS pas.
+- INTERDIT : "Il faut signaler a la CNIL sous 72h. DPO valide la communication. Compris ?"
+- INTERDIT : "Priorite : informer les investisseurs, puis les utilisateurs. Vous avez retenu ?"
+- OK : "On vient de detecter une fuite de donnees. Quelle est la premiere chose que vous faites ?"
+- OK : "Le directeur veut un plan de communication. Par qui commencez-vous ?"
+Si le joueur se trompe, donne un INDICE (une piste de reflexion), jamais la solution.
 
 ## Ton personnage
 Personnalite: ${agent.personality}
 Motivation: ${agent.motivation}
 Relation avec le joueur: ${agent.relationship_to_player}
-IMPORTANT: Ton ton et tes demandes doivent correspondre strictement a ton role professionnel (${agent.role}).
+Ton ton et tes demandes correspondent a ton role professionnel (${agent.role}).
 
 ## Contexte
 ${scenario.setting} ${scenario.initial_situation}
@@ -67,21 +66,30 @@ ${otherAgents || "Tu es seul."}
 ## Connaissances (du document de formation)
 ${relevantKnowledge.join("\n---\n")}
 
-## COMMENT INTERAGIR
-- Replique max 25 MOTS.
-- Structure type: [phrase de contexte ou reaction] + [question directe].
-- Exemple OK: "On a un souci technique urgent. Quelle est la premiere procedure a suivre en cas de panne reseau ?"
-- Exemple INTERDIT: "Panne reseau. Procedure. Vous dites quoi." (telegraphique = incomprehensible)
-- Si correct: reagis positivement, passe au sujet suivant immediatement.
-- Si faux: corrige en une phrase courte, donne un indice (ne donne jamais la reponse dans l'indice !), repose autrement.
+## STYLE DE JEU
+- Tu es une VRAIE PERSONNE dans le monde de l'entreprise, pas un narrateur de RPG.
+- Ne decris JAMAIS le decor ou l'environnement dans tes paroles.
+- Parle naturellement : 2 a 3 phrases courtes, comme un vrai collegue.
+- Structure type : [reaction ou mise en contexte] + [question directe].
+- Exemple OK : "On a un souci technique urgent. Le serveur principal est tombe. Quelle est la premiere procedure a suivre en cas de panne reseau ?"
+- Exemple INTERDIT : "Panne reseau. Procedure. Vous dites quoi." (trop telegraphique, incomprehensible)
+- Si le joueur repond bien : reagis positivement, passe au sujet suivant.
+- Si le joueur se trompe : reagis avec empathie, donne un indice, reformule ta question.
+
+## VOIX ET ASTERISQUES
+Le texte entre *asterisques* est lu par une voix de narrateur differente. Utilise-les pour :
+- Planter le decor et l'ambiance (ex: *L'open space est silencieux, seuls les claviers crepitent*)
+- Des sons ou actions (ex: *Le telephone sonne*, *Elle pose un dossier sur la table*)
+- Des transitions de scene (ex: *Plus tard, dans la salle de reunion*)
+Ne mets JAMAIS tes propres paroles entre asterisques — seules les descriptions de scene et les actions y vont.
 
 ## PASSAGE DE MAIN (HANDOFF)
-- Quand tu passes la main a un collegue, fais une transition naturelle et fluide.
-- Exemple: "C'est pas mon domaine, je vous envoie ma collegue Dupont." ou "Attendez, je vous passe la directrice."
-- Ne dis JAMAIS "je passe la main" de maniere robotique. Sois naturel.
+Quand tu passes la main a un collegue, fais une transition naturelle.
+- OK : "C'est pas mon domaine, je vous envoie ma collegue Dupont."
+- INTERDIT : "Je passe la main a l'agent suivant."
 
-## REGLE FINALE
-25 mots max. Pas d'asterisques pour tes paroles.`;
+## LIMITES
+50 mots max pour tes paroles (hors didascalies). Pas d'asterisques sur tes paroles.`;
 }
 
 function extractPlayableChunks(
@@ -256,6 +264,8 @@ export default function Home() {
   });
   // Indicates it's the player's turn to speak (all TTS finished playing)
   const [isPlayerTurn, setIsPlayerTurn] = useState(false);
+  // Blocks input during automatic agent transitions (auto-kickoff)
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Multi-agent state
   const [multiAgentState, setMultiAgentState] = useState<MultiAgentGameState | null>(null);
@@ -267,6 +277,8 @@ export default function Home() {
     message: "",
   });
   const ragIndexRef = useRef<RagIndex | null>(null);
+  // Triggers an automatic kickoff after restoring a saved game state.
+  const pendingResumeKickoffRef = useRef(false);
   // Holds the next state to use for auto-kickoff after an agent switch.
   const autoKickoffStateRef = useRef<MultiAgentGameState | null>(null);
   // Called by processTtsQueue when queue empties — fires the deferred auto-kickoff.
@@ -339,7 +351,9 @@ export default function Home() {
                 );
                 setSpeakerType("npc");
                 setIsPlayerTurn(true);
+                setGameState((prev) => ({ ...prev, dialogue: "Cliquez n'importe où pour reprendre la session..." }));
                 setScreenPhase("game");
+                pendingResumeKickoffRef.current = true;
                 return;
               }
             }
@@ -422,6 +436,7 @@ export default function Home() {
 
     const doKickoff = () => {
       autoKickoffCallbackRef.current = null;
+      setIsTransitioning(false);
       // Immediately switch name + clear old dialogue → user sees the switch happened.
       setDisplayActiveAgentId(kickoffState.activeAgentId);
       setGameState((prev) => ({ ...prev, dialogue: "" }));
@@ -700,6 +715,9 @@ export default function Home() {
         audioRef.current.removeAttribute("src");
         audioRef.current = null;
       }
+      // Reset TTS lock so new chunks from this turn can be processed.
+      // Required when the user submits while previous TTS is still playing.
+      isTtsPlayingRef.current = false;
 
       // Update conversation history
       const updatedHistory = [
@@ -1058,11 +1076,13 @@ export default function Home() {
         // Schedule the new agent's intro — fires when isLoading drops to false.
         if (!isKickoff && shouldAutoKickoff) {
           autoKickoffStateRef.current = computedNextState;
+          setIsTransitioning(true);
         }
       }
     } catch (e) {
       console.error("Multi-agent chat error:", e);
       setGameState((prev) => ({ ...prev, dialogue: "Connexion perdue. Réessayez." }));
+      setIsTransitioning(false);
       // On error, signal player can act again since no TTS will play
       setIsPlayerTurn(true);
     } finally {
@@ -1077,6 +1097,28 @@ export default function Home() {
   const sendAction = useCallback(async (playerText: string) => {
     return sendMultiAgentAction(playerText);
   }, [sendMultiAgentAction]);
+
+  // Auto-kickoff after restoring a saved game — fires on first user interaction
+  // (must be triggered by a user gesture so the browser allows audio.play for TTS)
+  useEffect(() => {
+    if (!pendingResumeKickoffRef.current) return;
+    const fireKickoff = () => {
+      if (!pendingResumeKickoffRef.current) return;
+      pendingResumeKickoffRef.current = false;
+      const state = multiAgentState;
+      if (state) {
+        sendMultiAgentAction("", { kickoff: true, stateOverride: state });
+      }
+    };
+    document.addEventListener("click", fireKickoff, { once: true });
+    document.addEventListener("keydown", fireKickoff, { once: true });
+    document.addEventListener("touchstart", fireKickoff, { once: true });
+    return () => {
+      document.removeEventListener("click", fireKickoff);
+      document.removeEventListener("keydown", fireKickoff);
+      document.removeEventListener("touchstart", fireKickoff);
+    };
+  }, [multiAgentState, sendMultiAgentAction]);
 
   const startGame = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
@@ -1281,6 +1323,7 @@ export default function Home() {
     setDocumentFilename(null);
     setIsReportVisible(false);
     setIsPlayerTurn(false);
+    setIsTransitioning(false);
     setMultiAgentState(null);
     setGameEvents([]);
     setMissionFeedItems([]);
@@ -3000,7 +3043,7 @@ export default function Home() {
               <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
                 <TextInput
                   onSubmit={(t) => sendAction(t)}
-                  disabled={isLoading || !isPlayerTurn || gameState.isGameOver}
+                  disabled={isLoading || isTransitioning || gameState.isGameOver}
                 />
               </div>
             </div>

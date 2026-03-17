@@ -75,7 +75,7 @@ export function useDeepgramSTT(
       const { mimeType, deepgramEncoding } = getRecorderConfig();
 
       const params = new URLSearchParams({
-        model:           "nova-2",
+        model:           "nova-3",
         language,
         smart_format:    "true",
         interim_results: "true",
