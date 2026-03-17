@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Training } from "./TrainingCard";
+import LearnerReportPanel from "./LearnerReportPanel";
 
 interface Enrollment {
   id: string;
@@ -55,9 +56,11 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLearner, setSelectedLearner] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!isOpen || !training) return;
+    setSelectedLearner(null);
     let cancelled = false;
 
     const fetchEnrollments = async () => {
@@ -127,7 +130,7 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
             style={{
               background: "white",
               borderRadius: 20,
-              width: 720,
+              width: 780,
               maxWidth: "90vw",
               maxHeight: "85vh",
               overflow: "hidden",
@@ -229,7 +232,13 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
 
             {/* Body */}
             <div style={{ padding: "24px 32px 32px", overflow: "auto", flex: 1 }}>
-              {loading ? (
+              {selectedLearner ? (
+                <LearnerReportPanel
+                  enrollmentId={selectedLearner.id}
+                  learnerName={selectedLearner.name}
+                  onBack={() => setSelectedLearner(null)}
+                />
+              ) : loading ? (
                 <div style={{
                   display: "flex",
                   flexDirection: "column",
@@ -363,7 +372,7 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
                           background: "var(--corp-bg-subtle)",
                           borderBottom: "1px solid var(--corp-border)",
                         }}>
-                          {["Nom", "Statut", "Score", "Progression", "Derniere activite"].map((col) => (
+                          {["Nom", "Statut", "Score", "Progression", "Derniere activite", ""].map((col) => (
                             <th
                               key={col}
                               style={{
@@ -417,6 +426,35 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
                               </td>
                               <td style={{ padding: "12px 16px", color: "var(--corp-text-muted)" }}>
                                 {formatRelativeDate(enrollment.last_played_at)}
+                              </td>
+                              <td style={{ padding: "12px 10px", textAlign: "right" }}>
+                                {(enrollment.status === "in_progress" || enrollment.status === "completed") && (
+                                  <button
+                                    onClick={() => setSelectedLearner({ id: enrollment.id, name: enrollment.profiles?.full_name || "Apprenant" })}
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: "var(--corp-blue)",
+                                      background: "rgba(37,99,235,0.06)",
+                                      border: "1px solid rgba(37,99,235,0.15)",
+                                      borderRadius: 6,
+                                      padding: "5px 12px",
+                                      cursor: "pointer",
+                                      whiteSpace: "nowrap",
+                                      transition: "all 0.15s",
+                                    }}
+                                    onMouseOver={(e) => {
+                                      e.currentTarget.style.background = "rgba(37,99,235,0.12)";
+                                      e.currentTarget.style.borderColor = "rgba(37,99,235,0.3)";
+                                    }}
+                                    onMouseOut={(e) => {
+                                      e.currentTarget.style.background = "rgba(37,99,235,0.06)";
+                                      e.currentTarget.style.borderColor = "rgba(37,99,235,0.15)";
+                                    }}
+                                  >
+                                    Detail
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
