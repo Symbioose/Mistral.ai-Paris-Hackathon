@@ -36,12 +36,11 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      // Dynamic import — pdf-parse exports PDFParse class with load() + getText()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { PDFParse } = await import("pdf-parse") as any;
-      const parser = new PDFParse();
-      await parser.load(buffer);
-      text = await parser.getText();
+      // pdf-parse v2: PDFParse class, data passed in constructor, getText() returns TextResult
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      const result = await parser.getText();
+      text = result.text;
     } else {
       return NextResponse.json({ error: "Format non supporté. Utilisez .txt ou .pdf." }, { status: 400 });
     }
