@@ -1,8 +1,9 @@
 {
-  "enabledPlugins": {
-    "ui-ux-pro-max@ui-ux-pro-max-skill": true
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "env":{
-      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS":"1"
+  "enabledPlugins": {
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true,
+    "superpowers@claude-plugins-official": true
   }
 }
