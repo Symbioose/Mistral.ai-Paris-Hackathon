@@ -1,476 +1,351 @@
-# Architecture Technique — RAG to RPG (v2)
+# YouGotIt — Documentation technique
 
-Serious game engine B2B : un document de formation → simulation multi-agents voice roleplay.
-Stack : Next.js 16 App Router · Mistral AI (via AWS Bedrock) · ElevenLabs · Deepgram Nova-2
-
----
-
-## 1. Vue d'ensemble
-
-```
-Document PDF/TXT
-       │
-  /api/upload          → extraction texte brut
-       │
-  /api/orchestrate     → SSE : prepareGamePlan() — 3 appels Mistral → GamePlan
-       │
-  app/page.tsx         → machine d'état React (phases UI)
-       │
-       ├─ /api/chat      → SSE : Q&A state machine + streaming OpenAI SDK (Bedrock)
-       ├─ /api/tts       → ElevenLabs TTS par segment (prefetch parallèle)
-       ├─ /api/deepgram  → Fournit la clé Deepgram au client (sécurité)
-       └─ /api/report    → Rapport manager JSON post-simulation
-```
-
-**Phases UI :** `upload → ready → orchestrating → game → report`
-
----
-
-## 2. Pipeline d'orchestration (`app/lib/agents/prepare.ts`)
-
-Au démarrage, 3 appels Mistral séquentiels génèrent le `GamePlan` complet.
-
-### Step 1 — `generateQAPairs()`
-
-| Param | Valeur |
-|-------|--------|
-| Model | `mistral.mistral-large-3-675b-instruct` |
-| Input | `documentText.slice(0, 8000)` |
-| Output | `QAPair[]` — questions + réponses attendues + mots-clés + situation RPG |
-| maxTokens | 3000 |
-| timeout | 30s |
-
-Chaque `QAPair` contient :
-- `question` : question directe
-- `expected_answer` : 2-4 points clés
-- `keywords` : mots discriminants qui doivent apparaître dans une bonne réponse
-- `situation` : mini-scénario RPG en 2 phrases que l'agent joue pour poser la question
-- `difficulty` : `easy | medium | hard`
-
-### Step 2 — `categorizeQAPairs()`
-
-| Param | Valeur |
-|-------|--------|
-| Model | `mistral.magistral-small-2509` ← petit modèle, tâche simple |
-| Input | liste des questions (IDs + texte) |
-| Output | `QACategory[]` — 1 à 4 catégories thématiques |
-| maxTokens | 1000 |
-| timeout | 15s |
-
-Règles : 1 catégorie par thème, min 2 Q&A / catégorie, max 4 catégories, progression pédagogique.
-
-### Step 3 — `generateAgentsAndScenario()`
-
-| Param | Valeur |
-|-------|--------|
-| Model | `mistral.mistral-large-3-675b-instruct` |
-| Input | résumé des catégories (nom + description + exemple de question) |
-| Output | `Agent[]` + `learningAgent` + `Scenario` |
-| maxTokens | 2500 |
-| timeout | 30s |
-
-Produit :
-- **1 agent par catégorie** (personnalités opposées, voix distinctes)
-- **1 agent pédagogique** (`warm_female`) — s'active sur les échecs
-- **1 scénario** avec 1 acte par catégorie
-
-**Fallback** : si un step échoue → `fallbackGamePlan()` avec données génériques (M. Durand, 5 Q&A basiques).
-
-**Type produit** :
-```typescript
-GamePlan = {
-  categories: QACategory[];
-  qaPairs:    QAPair[];
-  agents:     Agent[];          // 1 par catégorie
-  learningAgent: Agent;         // warm_female
-  scenario:   Scenario;         // acts[]
-}
-```
-
-### SSE events `/api/orchestrate`
-
-```
-status → status → ... → scenario → new_agent (×N, 80ms) → evaluation_grid → ready
-```
-
----
-
-## 3. Machine d'état Q&A (`/api/chat/route.ts`)
-
-Chaque réponse du joueur passe par cette machine d'état côté serveur :
-
-```
-ASKING ──── correct ──────────────────────────────► Q suivante (ou catégorie suivante)
-   │
-   └── incorrect (1ère fois) → REPHRASING
-              │
-         correct ──────────────────────────────────► Q suivante
-              │
-         incorrect (2ème fois) → LEARNING (agent pédagogique)
-                    │
-               "compris" → RE_ASKING
-                    │
-               correct ──────────────────────────────► Q suivante
-```
-
-**`InteractionState` — la position dans la machine :**
-```typescript
-{
-  phase:               "ASKING" | "REPHRASING" | "LEARNING" | "RE_ASKING" | "COMPLETE"
-  currentCategoryIndex: number;
-  currentQAIndex:       number;
-  failCount:            0 | 1 | 2;
-  completedQAs:         string[];    // IDs des Q&A réussis
-  failedQAs:            string[];    // IDs des Q&A échoués
-  currentQAPairId:      string;
-}
-```
-
-**Évaluation** : appel `mistralChat()` en JSON mode (pas de streaming) — compare la réponse joueur aux `keywords` et `expected_answer`. Retourne `{ correct: boolean, feedback: string }`.
-
-**Scoring par tentative :**
-
-| Phase | Points |
-|-------|--------|
-| ASKING (1ère tentative) | +15 |
-| RE_ASKING (après REPHRASING) | +8 |
-| RE_ASKING (après LEARNING) | +3 |
-| Échec → REPHRASING | −20% du score max |
-| Échec → LEARNING | −30% du score max |
-
-**Avancement automatique :**
-- Toutes les Q&A d'une catégorie terminées → switch vers l'agent de la catégorie suivante
-- Toutes les catégories terminées → `COMPLETE` → rapport
-
-### Tools (function calling) dans `/api/chat`
-
-| Tool | Déclenchement | Effet |
-|------|---------------|-------|
-| `update_emotion` | Après chaque réponse joueur | Change `emotion` → voix TTS + couleur fond |
-| `trigger_event` | Contextuel | Ajoute à `triggeredEvents` (narratif) |
-
-> Note : `switch_agent` n'est **plus** un tool. L'avancement entre agents est **déterministe** — piloté par la machine d'état Q&A, pas par le LLM.
-
----
-
-## 4. Système d'agents
-
-### Voix (`app/lib/voice/voices.ts`)
-
-| `voice_type` | Caractère | Env var |
-|-------------|-----------|---------|
-| `authoritative_male` | Directeur pressé | `ELEVENLABS_VOICE_AUTHORITATIVE_MALE` |
-| `warm_female` | Bienveillante (formatrice) | `ELEVENLABS_VOICE_WARM_FEMALE` |
-| `stressed_young` | Junior stressé | `ELEVENLABS_VOICE_STRESSED_YOUNG` |
-| `calm_narrator` | Narrateur (`*astérisques*`) | `ELEVENLABS_VOICE_CALM_NARRATOR` |
-| `gruff_veteran` | Vétéran bourru | `ELEVENLABS_VOICE_GRUFF_VETERAN` |
-
-### Émotions dynamiques (`EMOTION_PARAMS`)
-
-| Émotion | stability | speed | style |
-|---------|-----------|-------|-------|
-| `calm` | 0.75 | 1.0 | 0.1 |
-| `stressed` | 0.30 | 1.2 | 0.65 |
-| `angry` | 0.40 | 1.1 | 0.80 |
-| `panicked` | 0.20 | 1.4 | 0.95 |
-| `suspicious` | 0.55 | 0.95 | 0.40 |
-
-L'émotion est déclenchée par `update_emotion` et affecte :
-- Les paramètres ElevenLabs (stability, similarity_boost, speed, style)
-- La couleur de fond de l'interface (transition CSS 0.8s)
-- La couleur du badge émotion dans `ActiveAgentDisplay`
-
-### Agent pédagogique (`learningAgent`)
-
-- `voice_type: warm_female`, toujours le même quelque soit le document
-- S'active sur le **2ème échec consécutif** d'une Q&A
-- Explique la bonne réponse, puis dit "Je vous repasse [nom agent catégorie]"
-- Après confirmation du joueur → `RE_ASKING` de la même question
-
-### Transition entre agents (switch déterministe)
-
-1. Toutes les Q&A de la catégorie courante terminées → l'agent sortant dit "Je vous passe [nom suivant]"
-2. `autoKickoffStateRef` stocke le prochain état
-3. Pendant le TTS de la phrase d'adieu, `prefetchedResponseRef` lance déjà le `fetch("/api/chat")` suivant
-4. Quand TTS finit → `doKickoff()` → `displayActiveAgentId` mis à jour immédiatement → streaming du nouvel agent commence (réponse déjà là)
-
-### Mémoire partagée inter-agents (`SharedMemoryNote`)
-
-L'orchestrateur peut injecter des notes d'un agent à un autre (ex : "joueur faible sur sujet X") — utilisées dans les system prompts des agents entrants.
-
----
-
-## 5. Pipeline TTS (`/api/tts/route.ts`)
-
-### Segmentation
-
-- Texte avec `*astérisques*` → voix `calm_narrator` (didascalies narrateur)
-- Reste → voix de l'agent actif + paramètres d'émotion
-
-### Prefetch parallèle
-
-`enqueueTtsSegment()` appelle immédiatement `getOrCreateTtsPromise(chunk)` → le chunk N+1 est fetchné pendant la lecture du chunk N. Résultat : zéro pause entre segments.
-
-### File TTS
-
-`ttsQueueRef` traité séquentiellement par `processTtsQueue()`. Le `ttsGenerationRef` (entier incrémenté) invalide les promesses stales si un nouveau tour commence.
-
-### ElevenLabs
-
-- Model : `eleven_multilingual_v2`
-- Endpoint : `/v1/text-to-speech/{voice_id}` (réponse complète, pas streaming)
-- Timeout : 15s
-
----
-
-## 6. STT — Deepgram WebSocket (`app/hooks/useDeepgramSTT.ts`)
-
-### Architecture
-
-```
-onMouseDown (user gesture)
-    │
-    ├── getUserMedia()          ← appelé SYNCHRONIQUEMENT dans le handler (requis par Safari)
-    │       │
-    │       ▼
-    ├── fetch /api/deepgram     ← récupère la clé API côté serveur (sécurité)
-    │       │
-    │       ▼
-    ├── new WebSocket(wss://api.deepgram.com/v1/listen?...)
-    │       │
-    │       ▼ ws.onopen
-    └── MediaRecorder.start(100ms)   ← chunks opus/mp4 envoyés toutes les 100ms
-            │
-            ▼ ws.onmessage
-        résultats interim (affichés en live) + résultats finaux (accumulés)
-
-onMouseUp → stopRecording() → transcript envoyé à sendAction()
-```
-
-### Format audio cross-browser
-
-`getRecorderConfig()` teste dans l'ordre :
-1. `audio/webm;codecs=opus` → `encoding=opus` (Chrome, Firefox)
-2. `audio/webm` → `encoding=opus`
-3. `audio/ogg;codecs=opus` → `encoding=opus`
-4. `audio/mp4` → `encoding=aac` (Safari)
-
-Le paramètre `encoding` est passé dynamiquement à Deepgram selon le format détecté.
-
-### Route `/api/deepgram`
-
-Fournit `DEEPGRAM_API_KEY` au client depuis le serveur. En production, remplacer par la création d'un token temporaire via l'API Deepgram (TTL court, scope `usage:write` uniquement).
-
-### État visuel (`PushToTalk.tsx`)
-
-- `isPressed` : activé immédiatement sur `mousedown` → animation instantanée
-- `isRecording` (hook) : activé sur `ws.onopen` (~200–500ms après)
-- `isActive = isPressed || isRecording` → pilote tous les visuels
-
----
-
-## 7. RAG (`app/lib/rag.ts`)
-
-BM25 maison (zéro dépendance externe) :
-- Chunking : overlapping chunks sur le document source
-- `buildRagIndex(text)` → `termFreq` + `docFreq` par chunk
-- `retrieveRelevantChunks(index, query, k)` → top-k chunks par score BM25
-- Stop words français, normalisation Unicode + accent stripping
-
-Utilisé dans les system prompts des agents : chaque agent reçoit les chunks les plus pertinents selon son rôle + ses `knowledge_topics`.
-
----
-
-## 8. Rapport manager (`/api/report/route.ts`)
-
-Déclenché manuellement à la fin de la simulation.
-
-**Input :** `gameState`, `assessments[]`, `documentFilename`, `documentContext`
-
-**LLM :** `mistral.mistral-large-3-675b-instruct`, JSON mode, `maxTokens: 1200`, `timeout: 20s`
-
-**Output `SimulationReport` :**
-```typescript
-{
-  globalWeightedScore:   number;          // score pondéré final
-  executiveSummary:      string;          // 1-2 phrases
-  topCriticalGaps:       CriticalGap[];   // 2-3 lacunes critiques
-  recommendations:       SkillRecommendation[]; // actions priorisées
-  actionablePlan7Days:   string[];        // 3 actions concrètes
-  failurePatternAnalysis: FailurePattern[]; // 1-2 patterns récurrents
-  employeeVibe:          EmployeeVibe;    // ton, résistance au stress, synthèse
-}
-```
-
-**Fallback déterministe** (`buildFallbackReport()`) si le LLM échoue — aucun blocage UI.
-
-**UI** : `SkillsReportDashboard` — `position: fixed; inset: 0` pour scroll indépendant du body (`overflow: hidden`).
-
----
-
-## 9. State central (`MultiAgentGameState`)
-
-```typescript
-{
-  scenario:           Scenario;
-  currentAct:         number;
-  agents:             AgentState[];         // systemPrompt pré-buildé + émotion
-  activeAgentId:      string;
-  conversationHistory: Message[];
-  scores:             Array<{ topic, score, weight }>;
-  totalScore:         number;               // computeWeightedScore(scores)
-  triggeredEvents:    string[];
-  gamePlan:           GamePlan;             // Q&A + catégories + agents
-  interactionState:   InteractionState;     // position machine d'état Q&A
-  sharedMemory:       SharedMemoryNote[];   // notes inter-agents
-}
-```
-
-Patches partiels envoyés via SSE → client merge : `nextState = { ...currentState, ...patch }`.
-
----
-
-## 10. API Routes
-
-| Route | Méthode | Description |
-|-------|---------|-------------|
-| `/api/upload` | POST | Extraction texte PDF/TXT (multipart) |
-| `/api/orchestrate` | POST | SSE — `prepareGamePlan()` (3 appels Mistral via Bedrock) |
-| `/api/chat` | POST | SSE — Q&A state machine + streaming OpenAI SDK (Bedrock) |
-| `/api/tts` | POST | ElevenLabs TTS → audio (base64 ou stream) |
-| `/api/deepgram` | GET | Fournit `DEEPGRAM_API_KEY` au client pour la connexion WebSocket |
-| `/api/report` | POST | Rapport manager JSON |
-
----
-
-## 11. Composants UI
-
-| Composant | Rôle |
-|-----------|------|
-| `AgentGenerationView` | Vue SSE orchestration — agents apparaissent au fil du SSE |
-| `ActiveAgentDisplay` | Nom + rôle + badge émotion de l'agent actif |
-| `DialogueBox` | Texte streamé + curseur animé |
-| `ObjectiveHUD` | Acte en cours + barre de score pondéré colorée |
-| `KnowledgeHeatmap` | Grille par catégorie — score coloré temps réel |
-| `MissionFeed` | Terminal orchestration live (bas panneau droit) |
-| `SidePanel` | Panneau droit — KnowledgeHeatmap + MissionFeed |
-| `SkillsReportDashboard` | Rapport manager (position:fixed, scroll indépendant) |
-| `PushToTalk` | STT push-to-talk — `getUserMedia` + Deepgram WebSocket |
-| `ActTransitionOverlay` | Animation transition entre actes |
-| `SimulationEndOverlay` | Écran fin de simulation + CTA rapport |
-
----
-
-## 12. Variables d'environnement
-
-```env
-# Mistral (direct API — orchestration + streaming agents)
-MISTRAL_API_KEY=...
-
-# AWS Bedrock (via endpoint OpenAI-compatible)
-OPENAI_API_KEY=bedrock-api-key-...        # token pré-signé AWS (validité 12h)
-OPENAI_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/v1
-AWS_BEARER_TOKEN_BEDROCK=...              # bearer token brut (référence)
-
-# Deepgram (STT WebSocket streaming — cross-browser)
-DEEPGRAM_API_KEY=...
-
-# ElevenLabs
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_AUTHORITATIVE_MALE=BUJMBsQ3Oq4cEeWSb48y
-ELEVENLABS_VOICE_WARM_FEMALE=imRmmzTqlLHt9Do1HufF
-ELEVENLABS_VOICE_STRESSED_YOUNG=Xgb3SR8idOHy8scGICeJ
-ELEVENLABS_VOICE_CALM_NARRATOR=BVBq6HVJVdnwOMJOqvy9
-ELEVENLABS_VOICE_GRUFF_VETERAN=F9KUTOne5xOKqAbIU7yg
-```
-
-> ⚠️ Le token `OPENAI_API_KEY` expire après **12 heures**. Le régénérer depuis la console hackathon si l'API retourne 401.
-
----
-
-## 13. Client LLM (`app/lib/agents/mistral-client.ts`)
-
-Toutes les routes LLM passent par `mistralChat()` et `bedrockClient` (instance partagée `OpenAI`).
-
-### Mapping modèles
-
-| Nom logique | Modèle Bedrock |
-|-------------|---------------|
-| `mistral-large-latest` (défaut) | `mistral.mistral-large-3-675b-instruct` |
-| `mistral-small-latest` | `mistral.magistral-small-2509` |
-
-### Interface `mistralChat()`
-
-```typescript
-mistralChat({
-  model?:         string;             // "mistral-large-latest" par défaut
-  messages:       ChatMessage[];
-  tools?:         ToolDefinition[];
-  toolChoice?:    "any"|"auto"|"none"|{...};  // "any" → "required" (OpenAI compat)
-  temperature?:   number;             // défaut 0.4
-  maxTokens?:     number;             // défaut 800
-  timeoutMs?:     number;             // défaut 15000
-  responseFormat?: { type: "json_object" };
-})
-```
-
-Le streaming dans `/api/chat` utilise `bedrockClient.chat.completions.create({ stream: true })` directement.
-
----
-
-## 14. Structure des fichiers
+## Architecture
 
 ```
 app/
-├── page.tsx                          # Composant racine — toute la logique client
-├── globals.css                       # body overflow:hidden + fonts + animations
 ├── api/
-│   ├── upload/route.ts               # Extraction texte
-│   ├── orchestrate/route.ts          # SSE GamePlan
-│   ├── chat/route.ts                 # SSE Q&A state machine + function calling
-│   ├── tts/route.ts                  # ElevenLabs TTS
-│   ├── deepgram/route.ts             # Fournit DEEPGRAM_API_KEY au client
-│   └── report/route.ts               # Rapport manager
-├── lib/
-│   ├── types.ts                      # Tous les types TypeScript
-│   ├── rag.ts                        # BM25 index + retrieval
-│   ├── sfx.ts                        # Effets sonores
-│   ├── speech.d.ts                   # (legacy — types Web Speech API, non utilisés)
-│   ├── agents/
-│   │   ├── mistral-client.ts         # Client OpenAI→Bedrock + helper mistralChat()
-│   │   ├── prepare.ts                # Pipeline orchestration 3 steps
-│   │   ├── orchestrator.ts           # (legacy, non utilisé en v2)
-│   │   ├── evaluator.ts              # (legacy, non utilisé en v2)
-│   │   └── agent-factory.ts          # (legacy, non utilisé en v2)
-│   └── voice/
-│       └── voices.ts                 # VOICE_MAP + EMOTION_PARAMS
+│   ├── auth/
+│   │   ├── login/            # POST — Authentification email/password
+│   │   ├── logout/           # POST — Deconnexion
+│   │   └── signup/           # POST — Inscription (token requis pour manager)
+│   ├── chat/                 # POST — SSE : machine a etats Q&A + evaluation
+│   ├── deepgram/             # GET — Cle temporaire Deepgram pour STT client
+│   ├── enrollments/[id]/
+│   │   └── save/             # POST — Sauvegarde progression (verrou optimiste)
+│   ├── orchestrate/          # POST — SSE : generation du game plan (3 appels LLM)
+│   ├── report/               # POST — Generation rapport de competences
+│   ├── trainings/
+│   │   ├── create/           # POST — Creation formation + upload document
+│   │   ├── join/             # POST — Rejoindre formation par code (student)
+│   │   └── [id]/
+│   │       ├── GET/DELETE    # Lecture/suppression formation
+│   │       ├── publish/      # POST — Publication + generation game plan
+│   │       └── enrollments/  # GET — Liste inscriptions (analytics manager)
+│   ├── tts/                  # POST — Synthese vocale ElevenLabs
+│   └── upload/               # POST — Extraction texte PDF/TXT
+├── components/
+│   ├── dashboard/            # TrainingCard, EnrollmentCard, CreateTrainingModal,
+│   │                         # TrainingAnalyticsModal, EmptyState, DashboardLayout
+│   ├── ActiveAgentDisplay    # Agent actif avec badge emotion
+│   ├── AgentGenerationView   # Phase d'orchestration (graphe SVG anime)
+│   ├── AgentPanel            # Liste agents + journal d'evenements
+│   ├── DialogueBox           # Dialogue avec effet typewriter
+│   ├── EmotionIndicator      # Jauge emotion avec intensite et trajectoire
+│   ├── KnowledgeHeatmap      # Scores par categorie
+│   ├── MissionFeed           # Journal de mission temps reel
+│   ├── ObjectiveHUD          # Acte + score + progression
+│   ├── PushToTalk            # Bouton micro + preview transcript
+│   ├── SkillsReportDashboard # Rapport final (radar, matrice, recommandations)
+│   ├── ActTransitionOverlay  # Transition entre actes
+│   ├── SimulationEndOverlay  # Ecran fin de simulation
+│   ├── FileUpload            # Upload PDF/TXT avec drag-drop
+│   └── TextInput             # Saisie texte alternative
 ├── hooks/
-│   └── useDeepgramSTT.ts             # WebSocket Deepgram — streaming STT cross-browser
-└── components/
-    ├── AgentGenerationView.tsx
-    ├── ActiveAgentDisplay.tsx
-    ├── DialogueBox.tsx
-    ├── ObjectiveHUD.tsx
-    ├── KnowledgeHeatmap.tsx
-    ├── MissionFeed.tsx
-    ├── SidePanel.tsx
-    ├── SkillsReportDashboard.tsx
-    ├── PushToTalk.tsx                  # Push-to-talk Deepgram (cross-browser)
-    ├── FileUpload.tsx
-    ├── ActTransitionOverlay.tsx
-    ├── SimulationEndOverlay.tsx
-    └── ...
+│   └── useDeepgramSTT        # Hook STT via WebSocket Deepgram
+├── lib/
+│   ├── agents/
+│   │   ├── openai-client     # Client OpenAI type avec retry (429/5xx)
+│   │   ├── prepare           # Pipeline 3 etapes : Q&A → categories → agents
+│   │   ├── orchestrator      # Generation SimulationSetup
+│   │   └── agent-factory     # Construction system prompts avec RAG
+│   ├── game/
+│   │   └── state             # Init game state, scoring, switch agent
+│   ├── supabase/
+│   │   ├── client            # Client navigateur (anon key)
+│   │   ├── server            # Client serveur (cookies)
+│   │   ├── admin             # Client service_role (bypass RLS)
+│   │   └── middleware        # Refresh session Next.js
+│   ├── voice/
+│   │   └── voices            # VOICE_MAP + EMOTION_PARAMS ElevenLabs
+│   ├── emotion-engine        # Machine a etats emotion (deterministe, sans LLM)
+│   ├── rag                   # BM25 chunking + retrieval (zero dependance)
+│   ├── sfx                   # Effets sonores proceduraux (Web Audio API)
+│   ├── api-utils             # Helper reponse erreur securisee
+│   └── types                 # Types TypeScript centraux
+├── providers/
+│   └── AuthProvider          # Contexte auth (signUp, signIn, signOut, profile)
+├── dashboard/
+│   ├── layout                # DashboardLayout (sidebar collapsible + auth guard)
+│   ├── manager/page          # Dashboard manager (formations, analytics)
+│   └── student/page          # Dashboard apprenant (inscriptions, progression)
+├── auth/
+│   └── callback/             # OAuth callback handler
+├── layout.tsx                # Root layout + AuthProvider
+└── page.tsx                  # Landing + simulation immersive
 ```
 
 ---
 
-## 15. Démarrage local
+## Base de donnees (Supabase)
 
-```bash
-npm install
-cp .env.example .env.local   # remplir MISTRAL_API_KEY + OPENAI_API_KEY + OPENAI_BASE_URL + ELEVENLABS_API_KEY + DEEPGRAM_API_KEY
-npm run dev
-# → http://localhost:3000
+### Tables
+
+**profiles** *(auto-cree par trigger Supabase Auth)*
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | FK vers auth.users |
+| role | text | `manager` / `student` |
+| full_name | text | Nom complet |
+| avatar_url | text? | Avatar optionnel |
+
+**trainings**
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | |
+| manager_id | UUID FK | Proprietaire |
+| title | text | Titre de la formation |
+| status | text | `draft` / `processing` / `published` |
+| document_text | text | Contenu brut du document |
+| document_filename | text | Nom du fichier original |
+| document_path | text? | Chemin storage Supabase |
+| game_plan | jsonb? | Plan de jeu genere par l'IA |
+| join_code | text unique | Code d'acces (auto-genere par trigger) |
+| max_students | int | Limite d'inscrits |
+
+**enrollments**
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | |
+| student_id | UUID FK | Apprenant |
+| training_id | UUID FK | Formation |
+| status | text | `not_started` / `in_progress` / `completed` |
+| score | int? | Score actuel |
+| total_questions | int? | Nombre total de Q&A |
+| correct_answers | int? | Reponses correctes |
+| game_state | jsonb? | Etat de jeu serialise (pause/reprise) |
+| chat_history | jsonb? | Historique conversation |
+| version | int | Verrou optimiste |
+| last_played_at | timestamp? | Derniere activite |
+
+**manager_invites** *(acces service_role uniquement — aucune politique RLS publique)*
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | |
+| token | text unique | Code d'invitation |
+| company_name | text? | Nom de l'entreprise |
+| is_used | boolean | Token consomme ? |
+
+### RLS
+
+| Table | Politique |
+|-------|-----------|
+| profiles | Lecture propre profil |
+| trainings | Manager CRUD propres formations, student lecture published |
+| enrollments | Student RW propres inscriptions, manager lecture pour ses formations |
+| manager_invites | Aucune politique publique — service_role uniquement |
+
+### Clients Supabase
+
+| Fichier | Cle | Usage |
+|---------|-----|-------|
+| `supabase/client.ts` | anon key | Navigateur (AuthProvider) |
+| `supabase/server.ts` | anon key + cookies | API routes (contexte user) |
+| `supabase/admin.ts` | service_role key | Operations admin (bypass RLS) |
+
+---
+
+## Authentification
+
+### Inscription Manager (avec token)
+
+```
+POST /api/auth/signup { email, password, fullName, role: "manager", inviteToken }
+  │
+  ├── Valide email + password
+  ├── Verifie token dans manager_invites (admin client, bypass RLS)
+  │   └── token existe ET is_used = false ?
+  ├── Marque is_used = true
+  ├── supabase.auth.signUp() avec role dans metadata
+  │   └── Si echec → rollback is_used = false
+  └── Retourne { user }
 ```
 
-Uploader un PDF ou TXT → lancer l'orchestration → jouer la simulation → consulter le rapport manager.
+### Inscription Student (libre)
+
+```
+POST /api/auth/signup { email, password, fullName, role: "student" }
+  └── Pas de token requis
+```
+
+### Session
+
+`proxy.ts` (middleware Next.js) appelle `updateSession()` sur chaque requete pour rafraichir les cookies auth Supabase.
+
+---
+
+## Pipeline de generation (`prepareGamePlan`)
+
+3 appels LLM sequentiels (`gpt-4.1-mini`) :
+
+**Step 1 — Q&A Generation** (temp 0.3)
+- Input : document text (max 100k chars)
+- Output : 5-25 `QAPair[]` avec `question`, `expected_answer`, `keywords`, `situation`, `source_excerpt`, `difficulty`
+- Regle : chaque Q&A doit citer un passage exact du document (zero hallucination)
+
+**Step 2 — Categorisation** (temp 0.2)
+- Input : liste des Q&A
+- Output : 1-4 `QACategory[]` thematiques, progression pedagogique
+
+**Step 3 — Agents + Scenario** (temp 0.4)
+- Output : 1 agent par categorie + 1 learning agent (`warm_female`) + scenario multi-actes
+- Voix assignees par personnalite (detection noms feminins)
+
+Fallback hardcode si le pipeline echoue.
+
+### SSE `/api/orchestrate`
+
+```
+status → status → ... → scenario → new_agent (×N) → evaluation_grid → ready
+```
+
+---
+
+## Machine a etats Q&A (`/api/chat`)
+
+```
+ASKING ──── correct ──────────────────────► Q&A suivante / COMPLETE
+   │
+   └── incorrect (fail=0) → REPHRASING
+              │
+         correct ──────────────────────────► Q&A suivante
+              │
+         incorrect (fail=1) → LEARNING (agent pedagogique explique)
+                    │
+               "compris" → RE_ASKING
+                    │
+               reponse ────────────────────► Q&A suivante
+```
+
+### Scoring
+
+Chaque categorie vaut 100 points, repartis entre ses Q&A :
+
+| Tentative | Multiplicateur |
+|-----------|---------------|
+| 1ere reponse correcte | x1.0 |
+| Apres rephrasing | x0.6 |
+| Apres learning | x0.3 |
+
+Penalites : -20% (1er echec), -30% (2eme), -15% (apres learning).
+
+Score total = moyenne ponderee des categories.
+
+### SSE `/api/chat`
+
+```
+meta (patch + emotion) → token (dialogue incremental) → done (etat final)
+```
+
+---
+
+## Systeme vocal
+
+### TTS (ElevenLabs)
+
+| Voice type | Usage |
+|------------|-------|
+| `authoritative_male` | Agent senior/directeur |
+| `warm_female` | Learning agent / agent bienveillant |
+| `stressed_young` | Agent junior sous pression |
+| `gruff_veteran` | Agent terrain experimente |
+| `calm_narrator` | Didascalies (`*texte entre asterisques*`) |
+
+Parametres modules par emotion :
+
+| Emotion | stability | speed | style |
+|---------|-----------|-------|-------|
+| calm | 0.75 | 1.0 | 0.1 |
+| stressed | 0.30 | 1.2 | 0.65 |
+| angry | 0.40 | 1.1 | 0.80 |
+| panicked | 0.20 | 1.4 | 0.95 |
+| suspicious | 0.55 | 0.95 | 0.40 |
+
+### STT (Deepgram)
+
+- Modele `nova-2`, langue `fr`, WebSocket streaming
+- Interim results (preview live) + resultats finaux
+- Detection activite vocale (VAD), silence 1.5s
+- Cle temporaire generee cote serveur (`/api/deepgram`)
+- Cross-browser : opus (Chrome/Firefox) ou aac (Safari)
+
+---
+
+## Moteur d'emotions
+
+Machine a etats deterministe (sans LLM) dans `emotion-engine.ts` :
+
+| Evenement | Emotion resultante | Intensite |
+|-----------|--------------------|-----------|
+| Bonne reponse (1er essai) | pleased | 0.4 ↓ |
+| Bonne reponse (apres echec) | relieved | 0.3 ↓ |
+| Mauvaise reponse (fail <= 1) | annoyed | +0.15 ↑ |
+| Mauvaise reponse (fail >= 2) | angry | max(0.7) ↑ |
+| Hesitation (> 15s) | suspicious | +0.10 ↑ |
+| Fin apprentissage | neutral | 0.2 = |
+
+L'emotion influence :
+- Le prompt agent (instruction de ton)
+- Les parametres TTS ElevenLabs
+- L'UI (badge emotion, couleurs)
+
+Decay naturel : intensite -0.1 par tour si cooling.
+
+---
+
+## RAG
+
+BM25 maison (zero dependance) dans `rag.ts` :
+
+- Chunking : 750 chars, overlap 120 chars
+- Tokenisation : lowercase + NFD + stop words francais
+- Scoring : BM25 (k1=1.2, b=0.75)
+- Top-K chunks injectes dans le system prompt de chaque agent
+- Garantit l'ancrage des reponses dans le document source
+
+---
+
+## Securite
+
+- Headers de securite en production (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
+- CSP desactivee en dev (HMR Next.js)
+- RLS Supabase sur toutes les tables
+- Tokens manager a usage unique avec rollback si signup echoue
+- `SUPABASE_SERVICE_ROLE_KEY` jamais expose cote client (pas de prefixe `NEXT_PUBLIC_`)
+- Cle Deepgram temporaire (cle principale jamais au client)
+- Validation input TTS (1000 chars max, voice ID alphanumerique)
+- Verrou optimiste sur les sauvegardes d'enrollment (`version`)
+- Verification ownership sur tous les endpoints manager
+- `Cache-Control: no-store` sur toutes les routes API
+
+---
+
+## Dependances
+
+| Categorie | Package | Version |
+|-----------|---------|---------|
+| Framework | next | 16.1.6 |
+| | react / react-dom | 19.2.3 |
+| Database | @supabase/supabase-js | 2.99.1 |
+| | @supabase/ssr | 0.9.0 |
+| Animation | framer-motion | 12.34.3 |
+| LLM | openai | 6.25.0 |
+| Documents | pdf-parse | 2.4.5 |
+| Styling | tailwindcss | 4 |
+| | @tailwindcss/postcss | 4 |
+| Dev | typescript | 5 |
+| | eslint | 9 |
+| | babel-plugin-react-compiler | 1.0.0 |
+
+---
+
+## Configuration
+
+- **React Compiler** active (`next.config.ts`)
+- **Tailwind CSS 4** zero-config via PostCSS
+- **TypeScript** strict mode, target ES2017, path alias `@/*`
+- **ESLint** flat config, extends `eslint-config-next`

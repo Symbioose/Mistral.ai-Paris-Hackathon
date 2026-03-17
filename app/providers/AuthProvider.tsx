@@ -20,7 +20,7 @@ interface AuthContextValue {
   isManager: boolean;
   isStudent: boolean;
   isAuthenticated: boolean;
-  signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, role: UserRole, inviteToken?: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ user: User; profile: UserProfile }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -68,13 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [fetchProfile]);
 
-  const signUp = useCallback(async (email: string, password: string, fullName: string, role: UserRole) => {
-    const { error } = await supabaseRef.current.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, role } },
+  const signUp = useCallback(async (email: string, password: string, fullName: string, role: UserRole, inviteToken?: string) => {
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, fullName, role, inviteToken }),
     });
-    if (error) throw new Error(error.message);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur lors de l'inscription");
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {

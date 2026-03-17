@@ -226,7 +226,7 @@ export default function Home() {
   const [landingModalMode, setLandingModalMode] = useState<"signin" | "signup">("signin");
   const [joinCode, setJoinCode] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
-  const [authForm, setAuthForm] = useState({ email: "", password: "", fullName: "" });
+  const [authForm, setAuthForm] = useState({ email: "", password: "", fullName: "", inviteToken: "" });
   const [currentEnrollmentId, setCurrentEnrollmentId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
@@ -1413,7 +1413,7 @@ export default function Home() {
       setLandingModalStep("idle");
       setLandingModalMode("signin");
       setAuthError(null);
-      setAuthForm({ email: "", password: "", fullName: "" });
+      setAuthForm({ email: "", password: "", fullName: "", inviteToken: "" });
       setJoinCode("");
     };
     const closeModal = () => {
@@ -1426,7 +1426,7 @@ export default function Home() {
       setAuthError(null);
       try {
         if (landingModalMode === "signup") {
-          await signUp(authForm.email, authForm.password, authForm.fullName, landingModalRole);
+          await signUp(authForm.email, authForm.password, authForm.fullName, landingModalRole, landingModalRole === "manager" ? authForm.inviteToken : undefined);
         }
         const { profile: userProfile } = await signIn(authForm.email, authForm.password);
         setLandingModalStep("idle");
@@ -1968,19 +1968,37 @@ export default function Home() {
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                       {landingModalMode === "signup" && (
-                        <input
-                          value={authForm.fullName}
-                          onChange={(e) => setAuthForm(f => ({ ...f, fullName: e.target.value }))}
-                          type="text"
-                          placeholder="Nom complet"
-                          style={{
-                            fontFamily: "var(--corp-font-body)", fontSize: 14,
-                            width: "100%", padding: "12px 16px",
-                            border: "1px solid var(--corp-border)", borderRadius: 8,
-                            background: "var(--corp-bg)", outline: "none",
-                            boxSizing: "border-box", color: "var(--corp-text)",
-                          }}
-                        />
+                        <>
+                          <input
+                            value={authForm.fullName}
+                            onChange={(e) => setAuthForm(f => ({ ...f, fullName: e.target.value }))}
+                            type="text"
+                            placeholder="Nom complet"
+                            style={{
+                              fontFamily: "var(--corp-font-body)", fontSize: 14,
+                              width: "100%", padding: "12px 16px",
+                              border: "1px solid var(--corp-border)", borderRadius: 8,
+                              background: "var(--corp-bg)", outline: "none",
+                              boxSizing: "border-box", color: "var(--corp-text)",
+                            }}
+                          />
+                          {landingModalRole === "manager" && (
+                            <input
+                              value={authForm.inviteToken}
+                              onChange={(e) => setAuthForm(f => ({ ...f, inviteToken: e.target.value }))}
+                              type="text"
+                              placeholder="Code d'invitation Entreprise"
+                              autoComplete="off"
+                              style={{
+                                fontFamily: "var(--corp-font-body)", fontSize: 14,
+                                width: "100%", padding: "12px 16px",
+                                border: "1px solid var(--corp-border)", borderRadius: 8,
+                                background: "var(--corp-bg)", outline: "none",
+                                boxSizing: "border-box", color: "var(--corp-text)",
+                              }}
+                            />
+                          )}
+                        </>
                       )}
                       <input
                         value={authForm.email}
@@ -2011,12 +2029,12 @@ export default function Home() {
                       />
                       <button
                         onClick={handleLoginSubmit}
-                        disabled={!authForm.email || !authForm.password || (landingModalMode === "signup" && !authForm.fullName)}
+                        disabled={!authForm.email || !authForm.password || (landingModalMode === "signup" && !authForm.fullName) || (landingModalMode === "signup" && landingModalRole === "manager" && !authForm.inviteToken)}
                         style={{
                           fontFamily: "var(--corp-font-body)", fontSize: 14, fontWeight: 600,
                           width: "100%", padding: 14,
-                          background: (!authForm.email || !authForm.password) ? "var(--corp-border)" : "var(--corp-blue)",
-                          color: (!authForm.email || !authForm.password) ? "var(--corp-text-muted)" : "white",
+                          background: (!authForm.email || !authForm.password || (landingModalMode === "signup" && landingModalRole === "manager" && !authForm.inviteToken)) ? "var(--corp-border)" : "var(--corp-blue)",
+                          color: (!authForm.email || !authForm.password || (landingModalMode === "signup" && landingModalRole === "manager" && !authForm.inviteToken)) ? "var(--corp-text-muted)" : "white",
                           border: "none", borderRadius: 8,
                           cursor: (!authForm.email || !authForm.password) ? "not-allowed" : "pointer",
                         }}
