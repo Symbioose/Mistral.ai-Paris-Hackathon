@@ -59,7 +59,6 @@ function sanitizeNarrative(text: string): string {
 
 const CONFIRM_REGEX =
   /\b(ok|okay|compris|d'accord|oui|ouais|je comprends|je vois|c'est bon|ca marche|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|c'est note|go|allons-y|on continue|parfait|super|genial|top|nickel|merci|d'ac|yep|exact|effectivement|absolument|tout a fait|bien recu|je saisis|impec|cool)\b/i;
-
 // ---------------------------------------------------------------------------
 // Q&A State Machine helpers
 // ---------------------------------------------------------------------------
@@ -277,19 +276,33 @@ export async function POST(req: NextRequest) {
         : `Le joueur a dit: "${safePlayerMessage}". Reagis naturellement et pose une question de suivi.`;
     }
   } else if (phase === "COMPLETE") {
-    agentPrompt = "La simulation est terminee. Felicite le joueur et fais un bilan encourageant en 2-3 phrases.";
+    const totalQAs = gamePlan.qaPairs.length;
+    const completedCount = interactionState.completedQAs.length;
+    const failedCount = interactionState.failedQAs.length;
+    const categoryNames = gamePlan.categories.map((c) => c.name).join(", ");
+    const totalCategories = gamePlan.categories.length;
+    const overallScore = computeWeightedScore(gameState.scores);
+    agentPrompt = `La simulation est terminee. Voici les donnees de la session :
+- Questions reussies : ${completedCount}/${totalQAs}
+- Questions echouees (passees au learning) : ${failedCount}
+- Themes abordes (${totalCategories}) : ${categoryNames}
+- Score global : ${overallScore}/100
+
+Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitations scolaires. Mentionne au moins un theme aborde et reste naturel. Si le score est eleve, montre que tu es impressionne a ta maniere. Si le score est moyen, reste encourageant sans condescendance.`;
     simulationComplete = true;
   } else if (phase === "LEARNING") {
     speakerType = "learning";
-    // Learning mode: check if player confirmed understanding
-    if (!isKickoff && CONFIRM_REGEX.test(safePlayerMessage)) {
-      // Player understood — switch back to category agent, re-ask
+    const currentLearningTurns = interactionState.learningTurns ?? 0;
+    // Learning mode: check if player confirmed understanding OR auto-advance after 3 turns
+    if (!isKickoff && (CONFIRM_REGEX.test(safePlayerMessage) || currentLearningTurns >= 2)) {
+      // Player understood (or 3 exchanges reached) — switch back to category agent, re-ask
       const catAgent = gamePlan.agents[interactionState.currentCategoryIndex];
       if (catAgent) {
         shouldSwitchAgent = true;
         switchToAgentId = catAgent.id;
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
+        nextState.learningTurns = 0;
         agentPrompt = `Le joueur a compris l'explication. Encourage-le brievement et fais une transition naturelle vers ${catAgent.name} qui va reprendre. Exemple : "Tres bien, vous avez saisi l'essentiel ! Je vous laisse avec ${catAgent.name} pour continuer."`;
 
         // Emotion: learning complete
@@ -297,12 +310,14 @@ export async function POST(req: NextRequest) {
       }
     } else if (isKickoff) {
       // Learning agent kickoff — explain the answer grounded in the document
+      nextState.learningTurns = 0;
       const sourceRef = currentQA.source_excerpt
         ? `\n\nEXTRAIT DU DOCUMENT SOURCE: "${currentQA.source_excerpt}"\n\nBase ton explication UNIQUEMENT sur cet extrait du document. Ne donne pas d'information qui n'est pas dans le document.`
         : "";
       agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine en demandant si c'est clair pour lui.\n\nINTERDICTION ABSOLUE: ne pose AUCUNE nouvelle question de formation, de reflexion ou de mise en situation. Tu dois UNIQUEMENT expliquer la reponse et verifier que le joueur a compris CE point precis. Pas de "Pourquoi penses-tu que...", pas de "A ton avis...", pas de question supplementaire.`;
     } else {
       // Player said something but didn't confirm — continue explaining
+      nextState.learningTurns = currentLearningTurns + 1;
       const sourceRef = currentQA.source_excerpt
         ? ` Rappel — le document dit: "${currentQA.source_excerpt}".`
         : "";
@@ -472,6 +487,14 @@ export async function POST(req: NextRequest) {
     return a;
   });
 
+  // Compute progress info
+  const mergedInteraction = { ...interactionState, ...nextState };
+  const progressCurrentQuestion = (mergedInteraction.completedQAs?.length ?? interactionState?.completedQAs?.length ?? 0) + 1;
+  const progressTotalQuestions = gamePlan?.qaPairs?.length ?? 0;
+  const progressCurrentCategoryIndex = mergedInteraction.currentCategoryIndex ?? interactionState?.currentCategoryIndex ?? 0;
+  const progressCurrentCategory = gamePlan?.categories?.[progressCurrentCategoryIndex]?.name ?? "";
+  const progressTotalCategories = gamePlan?.categories?.length ?? 0;
+
   const patch: Record<string, unknown> = {
     activeAgentId: shouldSwitchAgent ? switchToAgentId : gameState.activeAgentId,
     triggeredEvents: gameState.triggeredEvents,
@@ -487,6 +510,12 @@ export async function POST(req: NextRequest) {
       ...nextState,
     },
     emotionState: currentEmotion,
+    progress: {
+      currentQuestion: Math.min(progressCurrentQuestion, progressTotalQuestions),
+      totalQuestions: progressTotalQuestions,
+      currentCategory: progressCurrentCategory,
+      totalCategories: progressTotalCategories,
+    },
   };
 
   // Apply score update

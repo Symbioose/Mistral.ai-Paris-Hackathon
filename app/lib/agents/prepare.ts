@@ -202,6 +202,7 @@ REGLES AGENTS:
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
 - intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
+- IMPORTANT: les personnages doivent etre des gens que le joueur RENCONTRERAIT VRAIMENT dans cette situation. Choisis les roles les plus credibles pour le contexte du document: ca peut etre un client, un collegue, un technicien, un fournisseur, mais aussi un directeur ou un responsable si c'est coherent. L'essentiel c'est que chaque personnage ait une raison concrete d'etre la dans la scene et d'interagir avec le joueur.
 
 AGENT PEDAGOGIQUE (learningAgent):
 - voice_type: "warm_female"
@@ -221,13 +222,13 @@ JSON strict:
     {
       "id": "agent_1",
       "name": "Prenom Nom",
-      "role": "Titre professionnel",
+      "role": "Role concret de terrain (ex: client fidele, collegue de l'equipe, technicien senior...)",
       "personality": "Description courte",
       "voice_type": "authoritative_male",
-      "motivation": "Ce que ce personnage veut",
+      "motivation": "Ce que ce personnage veut concretement dans cette situation",
       "knowledge_topics": ["sujet1", "sujet2"],
       "intro_line": "15 mots max. Pas d'asterisques.",
-      "relationship_to_player": "Relation avec le joueur"
+      "relationship_to_player": "Relation concrete avec le joueur dans ce contexte"
     }
   ],
   "learningAgent": {
@@ -243,8 +244,8 @@ JSON strict:
   },
   "scenario": {
     "title": "Titre court (max 60 car)",
-    "setting": "Cadre professionnel (1-2 phrases)",
-    "initial_situation": "Situation de depart (1-2 phrases)",
+    "setting": "Lieu concret et realiste ou se passe la scene (1-2 phrases)",
+    "initial_situation": "Ce qui se passe quand le joueur arrive — situation concrete (1-2 phrases)",
     "acts": [
       {
         "act_number": 1,
@@ -283,6 +284,7 @@ JSON strict:
   const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "assertive_female", "stressed_young", "gruff_veteran"]);
   const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "warm_female"];
   const MALE_VOICES = new Set<Agent["voice_type"]>(["authoritative_male", "stressed_young", "gruff_veteran"]);
+  const FEMALE_VOICES = new Set<Agent["voice_type"]>(["warm_female", "assertive_female"]);
 
   // Detect feminine French first names heuristically
   function isFeminineName(fullName: string): boolean {
@@ -480,7 +482,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
     ],
   };
 
-  return { categories, qaPairs, agents, learningAgent, scenario };
+  return { categories, qaPairs, agents, learningAgent, scenario, isFallback: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -557,9 +559,10 @@ export async function prepareGamePlan(
 
     console.log(`[prepare] Total pipeline: ${Date.now() - t0}ms`);
 
-    return { categories, qaPairs, agents, learningAgent, scenario };
+    return { categories, qaPairs, agents, learningAgent, scenario, isFallback: false };
   } catch (err) {
     console.error("[prepare] Pipeline failed, using fallback:", err instanceof Error ? err.message : String(err));
+    status("⚠️ La generation automatique a echoue. Les questions ne sont pas basees sur votre document. Veuillez relancer la preparation.");
     return fallbackGamePlan(documentText, documentTitle);
   }
 }

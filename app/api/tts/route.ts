@@ -24,13 +24,11 @@ function sanitizeText(text: string): string {
 
   // Smooth punctuation for realtime spoken flow:
   // - soften hard pauses on ":" and ";"
-  // - turn most intra-paragraph sentence breaks into commas
-  // - keep final punctuation for natural ending
+  // - collapse multiple dots into single period
   const softened = cleaned
     .replace(/\s*:\s*/g, ", ")
     .replace(/\s*;\s*/g, ", ")
-    .replace(/\.{2,}/g, ".")
-    .replace(/([A-Za-zÀ-ÿ0-9])\.\s+(?=[A-ZÀ-Ý])/g, "$1, ");
+    .replace(/\.{2,}/g, ".");
 
   return softened
     .replace(/\s{2,}/g, " ")
@@ -106,6 +104,7 @@ export async function POST(req: NextRequest) {
       stability: params.stability,
       similarity_boost: params.similarity_boost,
       style: params.style ?? 0.3,
+      speed: params.speed ?? 1.0,
       use_speaker_boost: true,
     },
   });

@@ -278,6 +278,8 @@ export interface GamePlan {
   /** Dedicated pedagogical agent for learning mode */
   learningAgent: Agent;
   scenario: Scenario;
+  /** True when automatic generation failed and generic fallback questions are used */
+  isFallback: boolean;
 }
 
 export type InteractionPhase = "ASKING" | "REPHRASING" | "LEARNING" | "RE_ASKING" | "COMPLETE";
@@ -291,6 +293,8 @@ export interface InteractionState {
   completedQAs: string[];
   failedQAs: string[];
   currentQAPairId: string;
+  /** Number of exchanges in LEARNING phase without confirmation (auto-advance at 3) */
+  learningTurns?: number;
 }
 
 // ============================================
