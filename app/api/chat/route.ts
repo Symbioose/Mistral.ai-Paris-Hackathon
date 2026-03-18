@@ -58,7 +58,7 @@ function sanitizeNarrative(text: string): string {
 
 
 const CONFIRM_REGEX =
-  /\b(ok|compris|d'accord|oui|je comprends|c'est bon|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|go|allons-y|on continue)\b/i;
+  /\b(ok|okay|compris|d'accord|oui|ouais|je comprends|je vois|c'est bon|ca marche|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|c'est note|go|allons-y|on continue|parfait|super|genial|top|nickel|merci|d'ac|yep|exact|effectivement|absolument|tout a fait|bien recu|je saisis|impec|cool)\b/i;
 
 // ---------------------------------------------------------------------------
 // Q&A State Machine helpers
