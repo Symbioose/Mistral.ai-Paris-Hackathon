@@ -352,7 +352,7 @@ export async function POST(req: NextRequest) {
         // All done!
         nextState.phase = "COMPLETE";
         simulationComplete = true;
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de fin de scene qui conclut l'histoire*. Felicite-le chaleureusement et conclus la simulation avec un mot d'encouragement.`;
+        agentPrompt = `La reponse du joueur est correcte et la simulation touche a sa fin. *Didascalie de fin de scene qui conclut l'histoire*. Conclus la scene de maniere coherente avec ton personnage — reagis comme tu le ferais dans la vraie vie, pas avec des felicitations de prof. Termine la scene naturellement.`;
       } else if (next.categoryChanged) {
         // Category done — switch agent
         nextState.currentCategoryIndex = next.nextCategoryIndex;
@@ -371,7 +371,7 @@ export async function POST(req: NextRequest) {
         // Emotion resets on act change
         currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
 
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de transition qui fait evoluer la scene*. Felicite-le et passe naturellement la main a ${nextAgent?.name || "ton collegue"}. Exemple: "*Il hoche la tete, visiblement satisfait.* Bien joue, c'etait la bonne approche. Je vous laisse avec ${nextAgent?.name || "mon collegue"} pour la suite."`;
+        agentPrompt = `La reponse du joueur est correcte. Reagis brievement comme ton personnage le ferait (pas de felicitations scolaires). Puis fais arriver ${nextAgent?.name || "le personnage suivant"} (${nextAgent?.role || ""}) dans la scene avec une didascalie — il entre, il arrive, il intervient. Tu peux le signaler au joueur ("Ah tiens, voila ${nextAgent?.name || "quelqu'un"}"). INTERDICTIONS: ne pose AUCUNE question a ${nextAgent?.name || "ce personnage"}, ne lui demande PAS d'expliquer ou d'aider. Tu annonces juste son arrivee.`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -381,7 +381,7 @@ export async function POST(req: NextRequest) {
         const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
 
         const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-        agentPrompt = `Bonne reponse ! Reagis positivement en une phrase. ${nextSituation}\n*Didascalie qui fait avancer la scene*. Puis enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
+        agentPrompt = `La reponse du joueur est correcte. Reagis de maniere coherente avec ton personnage et la situation — pas de "bravo" ou de felicitations scolaires, reste dans le ton de la scene (un client mecontent peut simplement acquiescer, un collegue presse peut enchainer directement, etc.). ${nextSituation}\n*Didascalie qui fait avancer la scene*. Puis enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
       }
     } else {
       // Wrong answer
@@ -402,7 +402,7 @@ export async function POST(req: NextRequest) {
         if (!next.hasNext) {
           nextState.phase = "COMPLETE";
           simulationComplete = true;
-          agentPrompt = "Ce n'est pas grave, on a fait le tour. Fais un bilan final bienveillant et encourage le joueur a revoir les points difficiles.";
+          agentPrompt = "La simulation touche a sa fin. *Didascalie de conclusion*. Conclus la scene naturellement dans le ton de ton personnage. Mets en valeur ce qui a ete vu ensemble sans insister sur les erreurs.";
         } else if (next.categoryChanged) {
           nextState.currentCategoryIndex = next.nextCategoryIndex;
           nextState.currentQAIndex = next.nextQAIndex;
@@ -412,7 +412,7 @@ export async function POST(req: NextRequest) {
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
           currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
-          agentPrompt = `On avance a la suite. Fais une transition naturelle et passe la main a ${nextAgent?.name || "ton collegue"}. Sois encourageant malgre l'erreur.`;
+          agentPrompt = `Fais une transition sans mentionner l'erreur. Fais arriver ${nextAgent?.name || "le personnage suivant"} (${nextAgent?.role || ""}) dans la scene avec une didascalie — il entre, il arrive, il intervient. Tu peux le signaler au joueur. INTERDICTIONS: ne pose AUCUNE question a ${nextAgent?.name || "ce personnage"}, ne lui demande PAS d'expliquer ou d'aider. Tu annonces juste son arrivee.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
@@ -420,7 +420,7 @@ export async function POST(req: NextRequest) {
           nextState.phase = "ASKING";
           const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
           const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-          agentPrompt = `Ce n'est pas grave, on continue. ${nextSituation}\n*Courte didascalie de transition*. Enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
+          agentPrompt = `Enchaine naturellement sans commenter l'erreur. ${nextSituation}\n*Courte didascalie de transition*. Amene la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
         }
       } else if (interactionState.failCount === 0) {
         // First fail — rephrase
@@ -446,7 +446,7 @@ export async function POST(req: NextRequest) {
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction (frustration ou compassion selon ta personnalite)*. Passe naturellement la main a ${gamePlan.learningAgent.name} pour qu'elle explique. Exemple: "*Il soupire, visiblement preoccupe.* Bon, je vais laisser ${gamePlan.learningAgent.name} vous expliquer ca plus en detail."`;
+        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction coherente avec ta personnalite (1 phrase max)*. Passe la main a ${gamePlan.learningAgent.name} qui va prendre le relais. INTERDICTIONS: ne revele PAS la reponse, ne pose AUCUNE question, ne donne AUCUN indice. Tu fais UNIQUEMENT une courte reaction puis tu laisses ${gamePlan.learningAgent.name} parler.`;
       }
     }
   }
