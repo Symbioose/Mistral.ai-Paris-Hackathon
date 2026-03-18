@@ -432,7 +432,10 @@ export async function POST(req: NextRequest) {
         currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 1 });
 
         const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
-        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reagis avec empathie, donne un indice ou une piste de reflexion, puis reformule la question differemment: "${currentQA.question}". INTERDIT de donner la reponse, meme partiellement. Oriente la reflexion du joueur sans reveler la solution.`;
+        const keywordsHint = currentQA.keywords.length > 0
+          ? `\nOriente le joueur vers les concepts suivants SANS les nommer directement : [${currentQA.keywords.join(", ")}].`
+          : "";
+        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reagis avec empathie, donne un indice ou une piste de reflexion, puis reformule la question differemment: "${currentQA.question}". INTERDIT de donner la reponse, meme partiellement. Oriente la reflexion du joueur sans reveler la solution.${keywordsHint}`;
       } else {
         // Second fail — switch to learning mode
         if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
