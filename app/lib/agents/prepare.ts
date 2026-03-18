@@ -67,6 +67,7 @@ REGLES DE FORMAT:
 - difficulty: "easy" pour les definitions de base, "medium" pour les procedures, "hard" pour les decisions complexes avec dilemme
 - Varie les types: pas seulement "qu'est-ce que" mais aussi "que faites-vous si...", "quelle est la procedure pour...", "comment reagissez-vous quand..."
 - Les situations doivent etre REALISTES et ENGAGEANTES — le joueur doit avoir envie de repondre
+- Chaque situation doit etre UNIQUE — varie les lieux, les interlocuteurs, les circonstances. Deux situations ne doivent JAMAIS commencer de la meme maniere.
 
 JSON strict, aucun texte hors JSON:
 {
@@ -87,7 +88,7 @@ JSON strict, aucun texte hors JSON:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,
-    maxTokens: 4000,
+    maxTokens: 16000,
     timeoutMs: 90000,
   });
 
@@ -114,7 +115,7 @@ JSON strict, aucun texte hors JSON:
 // ---------------------------------------------------------------------------
 
 async function categorizeQAPairs(qaPairs: QAPair[]): Promise<QACategory[]> {
-  const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" (${qa.difficulty})`).join("\n");
+  const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" [${qa.keywords.join(", ")}] (${qa.difficulty})`).join("\n");
 
   const message = await chatCompletion({
     model: MODEL_PREPARATION,
@@ -173,6 +174,7 @@ async function generateAgentsAndScenario(
   categories: QACategory[],
   qaPairs: QAPair[],
   documentTitle: string,
+  documentExcerpt: string,
 ): Promise<{ agents: Agent[]; learningAgent: Agent; scenario: Scenario }> {
   const catSummary = categories
     .map((cat) => {
@@ -187,6 +189,9 @@ async function generateAgentsAndScenario(
       {
         role: "system",
         content: `Tu es un concepteur de simulations immersives pour la formation professionnelle.
+
+EXTRAIT DU DOCUMENT (pour comprendre le contexte reel):
+"${documentExcerpt}"
 
 Genere EXACTEMENT ${categories.length} agent(s) (un par categorie) + 1 agent pedagogique special + un scenario.
 
@@ -258,8 +263,8 @@ JSON strict:
       },
     ],
     responseFormat: { type: "json_object" },
-    temperature: 0.4,
-    maxTokens: 2500,
+    temperature: 0.55,
+    maxTokens: 8000,
     timeoutMs: 90000,
   });
 
@@ -543,6 +548,7 @@ export async function prepareGamePlan(
       categories,
       qaPairs,
       documentTitle,
+      documentText.slice(0, 1500),
     );
     console.log(`[prepare] Step 3 done in ${Date.now() - t3}ms — ${agents.length} agents + learning agent`);
     status(`${agents.length + 1} agents generes — finalisation...`);
