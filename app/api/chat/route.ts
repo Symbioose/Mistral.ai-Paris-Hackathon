@@ -314,7 +314,9 @@ export async function POST(req: NextRequest) {
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
 
     if (isFirst) {
-      agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 1 a 2 phrases). Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
+      const globalSetting = gamePlan.scenario?.setting || "";
+      const globalSituation = gamePlan.scenario?.initial_situation || "";
+      agentPrompt = `CADRE GENERAL: ${globalSetting} ${globalSituation}\n${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 2 a 3 phrases). Pose le cadre general pour que le joueur comprenne OU il est, POURQUOI il est la et QUEL est son role. Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
     } else {
       agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui fait avancer la scene (transition, nouveau detail d'ambiance, action d'un personnage — 1 a 2 phrases). Puis enchaine naturellement avec la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse.`;
     }
