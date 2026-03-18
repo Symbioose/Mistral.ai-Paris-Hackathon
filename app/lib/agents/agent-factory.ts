@@ -41,5 +41,5 @@ ${relevantKnowledge.join("\n---\n")}
 - Tu appelles les fonctions disponibles quand c'est pertinent.
 
 ## Format de réponse
-Réponds UNIQUEMENT avec ton dialogue parlé. Pas de narration. Juste ce que tu DIS.`;
+Réponds en restant dans ton personnage. Le format exact (didascalies, paroles, etc.) est défini par les règles de la session en cours.`;
 }

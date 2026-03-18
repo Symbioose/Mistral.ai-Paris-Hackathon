@@ -809,6 +809,20 @@ export default function Home() {
                 intensity: typeof emo.intensity === "number" ? emo.intensity : 0.3,
                 trajectory: (emo.trajectory as EmotionState["trajectory"]) || "stable",
               });
+              // Also update emotionForTurn so subsequent TTS chunks use the correct emotion
+              const emotionCurrentToAgent: Record<string, import("@/app/lib/types").AgentEmotion> = {
+                neutral: "calm",
+                pleased: "calm",
+                relieved: "calm",
+                annoyed: "suspicious",
+                angry: "angry",
+                suspicious: "suspicious",
+                stressed: "stressed",
+              };
+              const mappedEmotion = emotionCurrentToAgent[emo.current || "neutral"];
+              if (mappedEmotion) {
+                emotionForTurn = mappedEmotion;
+              }
             }
             // Parse speakerType from meta
             if (event.speakerType) {
