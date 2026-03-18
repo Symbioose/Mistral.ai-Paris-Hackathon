@@ -58,8 +58,7 @@ function sanitizeNarrative(text: string): string {
 
 
 const CONFIRM_REGEX =
-  /\b(ok|compris|d'accord|oui|je comprends|c'est bon|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|go|allons-y|on continue|je vois|[çc]a marche|parfait|super|merci|ouais|d'ac|top|nickel|okay|yep|yes|ah oui|exact|effectivement|absolument|tout [àa] fait|je saisis|c'est not[eé]|bien re[çc]u|roger|impec|g[eé]nial|cool|noté)\b/i;
-
+  /\b(ok|okay|compris|d'accord|oui|ouais|je comprends|je vois|c'est bon|ca marche|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|c'est note|go|allons-y|on continue|parfait|super|genial|top|nickel|merci|d'ac|yep|exact|effectivement|absolument|tout a fait|bien recu|je saisis|impec|cool)\b/i;
 // ---------------------------------------------------------------------------
 // Q&A State Machine helpers
 // ---------------------------------------------------------------------------
@@ -329,10 +328,7 @@ Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitati
     const isFirst = gameState.conversationHistory.length === 0;
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
 
-    if (phase === "RE_ASKING") {
-      // After learning phase — reformulate the question differently
-      agentPrompt = `${situation}\nReprends la question en la reformulant. Le joueur vient de recevoir une explication, c'est l'occasion de valider sa comprehension. Reformule la question de maniere differente, en lien avec l'explication. Ne repose PAS la question mot pour mot. Question originale (a reformuler): "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse.`;
-    } else if (isFirst) {
+    if (isFirst) {
       const globalSetting = gamePlan.scenario?.setting || "";
       const globalSituation = gamePlan.scenario?.initial_situation || "";
       agentPrompt = `CADRE GENERAL: ${globalSetting} ${globalSituation}\n${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 2 a 3 phrases). Pose le cadre general pour que le joueur comprenne OU il est, POURQUOI il est la et QUEL est son role. Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
@@ -390,7 +386,7 @@ Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitati
         // Emotion resets on act change
         currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
 
-        agentPrompt = `La reponse du joueur est correcte. Reagis comme ton personnage le ferait naturellement (pas de felicitations scolaires) et fais une transition narrative ou ${nextAgent?.name || "un nouveau personnage"} entre en scene de maniere organique. Le joueur doit comprendre QUI est cette personne via l'action et le dialogue, pas via une annonce.`;
+        agentPrompt = `La reponse du joueur est correcte. Reagis brievement comme ton personnage le ferait (pas de felicitations scolaires). Puis fais arriver ${nextAgent?.name || "le personnage suivant"} (${nextAgent?.role || ""}) dans la scene avec une didascalie — il entre, il arrive, il intervient. Tu peux le signaler au joueur ("Ah tiens, voila ${nextAgent?.name || "quelqu'un"}"). INTERDICTIONS: ne pose AUCUNE question a ${nextAgent?.name || "ce personnage"}, ne lui demande PAS d'expliquer ou d'aider. Tu annonces juste son arrivee.`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -431,7 +427,7 @@ Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitati
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
           currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
-          agentPrompt = `Fais une transition naturelle vers la suite sans mentionner l'erreur. ${nextAgent?.name || "Un autre personnage"} entre en scene de maniere organique. Reste dans le ton de la situation.`;
+          agentPrompt = `Fais une transition sans mentionner l'erreur. Fais arriver ${nextAgent?.name || "le personnage suivant"} (${nextAgent?.role || ""}) dans la scene avec une didascalie — il entre, il arrive, il intervient. Tu peux le signaler au joueur. INTERDICTIONS: ne pose AUCUNE question a ${nextAgent?.name || "ce personnage"}, ne lui demande PAS d'expliquer ou d'aider. Tu annonces juste son arrivee.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
@@ -468,7 +464,7 @@ Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitati
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction coherente avec ta personnalite*. Fais intervenir ${gamePlan.learningAgent.name} de maniere naturelle dans la scene — elle etait deja la, elle prend la parole pour aider. Pas de soupir, pas de condescendance.`;
+        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction coherente avec ta personnalite (1 phrase max)*. Passe la main a ${gamePlan.learningAgent.name} qui va prendre le relais. INTERDICTIONS: ne revele PAS la reponse, ne pose AUCUNE question, ne donne AUCUN indice. Tu fais UNIQUEMENT une courte reaction puis tu laisses ${gamePlan.learningAgent.name} parler.`;
       }
     }
   }
