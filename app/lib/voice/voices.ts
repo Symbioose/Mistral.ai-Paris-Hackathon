@@ -3,6 +3,7 @@ import { AgentEmotion, VoiceType } from "@/app/lib/types";
 export const VOICE_MAP: Record<VoiceType, string> = {
   authoritative_male: process.env.ELEVENLABS_VOICE_AUTHORITATIVE_MALE || "BUJMBsQ3Oq4cEeWSb48y",
   warm_female: process.env.ELEVENLABS_VOICE_WARM_FEMALE || "imRmmzTqlLHt9Do1HufF",
+  assertive_female: process.env.ELEVENLABS_VOICE_ASSERTIVE_FEMALE || "EXAVITQu4vr4xnSDxMaL",
   stressed_young: process.env.ELEVENLABS_VOICE_STRESSED_YOUNG || "Xgb3SR8idOHy8scGICeJ",
   calm_narrator: process.env.ELEVENLABS_VOICE_CALM_NARRATOR || "BVBq6HVJVdnwOMJOqvy9",
   gruff_veteran: process.env.ELEVENLABS_VOICE_GRUFF_VETERAN || "F9KUTOne5xOKqAbIU7yg",

@@ -67,6 +67,7 @@ REGLES DE FORMAT:
 - difficulty: "easy" pour les definitions de base, "medium" pour les procedures, "hard" pour les decisions complexes avec dilemme
 - Varie les types: pas seulement "qu'est-ce que" mais aussi "que faites-vous si...", "quelle est la procedure pour...", "comment reagissez-vous quand..."
 - Les situations doivent etre REALISTES et ENGAGEANTES — le joueur doit avoir envie de repondre
+- Chaque situation doit etre UNIQUE — varie les lieux, les interlocuteurs, les circonstances. Deux situations ne doivent JAMAIS commencer de la meme maniere.
 
 JSON strict, aucun texte hors JSON:
 {
@@ -87,7 +88,7 @@ JSON strict, aucun texte hors JSON:
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.3,
-    maxTokens: 4000,
+    maxTokens: 16000,
     timeoutMs: 90000,
   });
 
@@ -114,7 +115,7 @@ JSON strict, aucun texte hors JSON:
 // ---------------------------------------------------------------------------
 
 async function categorizeQAPairs(qaPairs: QAPair[]): Promise<QACategory[]> {
-  const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" (${qa.difficulty})`).join("\n");
+  const qaList = qaPairs.map((qa) => `- ${qa.id}: "${qa.question}" [${qa.keywords.join(", ")}] (${qa.difficulty})`).join("\n");
 
   const message = await chatCompletion({
     model: MODEL_PREPARATION,
@@ -173,6 +174,7 @@ async function generateAgentsAndScenario(
   categories: QACategory[],
   qaPairs: QAPair[],
   documentTitle: string,
+  documentExcerpt: string,
 ): Promise<{ agents: Agent[]; learningAgent: Agent; scenario: Scenario }> {
   const catSummary = categories
     .map((cat) => {
@@ -188,15 +190,18 @@ async function generateAgentsAndScenario(
         role: "system",
         content: `Tu es un concepteur de simulations immersives pour la formation professionnelle.
 
+EXTRAIT DU DOCUMENT (pour comprendre le contexte): "${documentExcerpt}"
+
 Genere EXACTEMENT ${categories.length} agent(s) (un par categorie) + 1 agent pedagogique special + un scenario.
 
 REGLES AGENTS:
 - Chaque agent correspond a UNE categorie et a une personnalite distincte
-- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, reserve au narrateur systeme)
-- Si le personnage est une femme (prenom feminin), voice_type OBLIGATOIREMENT "warm_female"
+- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, assertive_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, reserve au narrateur systeme)
+- Si le personnage est une femme, voice_type parmi warm_female ou assertive_female selon sa personnalite.
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
 - intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
+- IMPORTANT: les personnages doivent etre des gens que le joueur RENCONTRERAIT VRAIMENT dans cette situation. Choisis les roles les plus credibles pour le contexte du document: ca peut etre un client, un collegue, un technicien, un fournisseur, mais aussi un directeur ou un responsable si c'est coherent. L'essentiel c'est que chaque personnage ait une raison concrete d'etre la dans la scene et d'interagir avec le joueur.
 
 AGENT PEDAGOGIQUE (learningAgent):
 - voice_type: "warm_female"
@@ -216,13 +221,13 @@ JSON strict:
     {
       "id": "agent_1",
       "name": "Prenom Nom",
-      "role": "Titre professionnel",
+      "role": "Role concret de terrain (ex: client fidele, collegue de l'equipe, technicien senior...)",
       "personality": "Description courte",
       "voice_type": "authoritative_male",
-      "motivation": "Ce que ce personnage veut",
+      "motivation": "Ce que ce personnage veut concretement dans cette situation",
       "knowledge_topics": ["sujet1", "sujet2"],
       "intro_line": "15 mots max. Pas d'asterisques.",
-      "relationship_to_player": "Relation avec le joueur"
+      "relationship_to_player": "Relation concrete avec le joueur dans ce contexte"
     }
   ],
   "learningAgent": {
@@ -238,8 +243,8 @@ JSON strict:
   },
   "scenario": {
     "title": "Titre court (max 60 car)",
-    "setting": "Cadre professionnel (1-2 phrases)",
-    "initial_situation": "Situation de depart (1-2 phrases)",
+    "setting": "Lieu concret et realiste ou se passe la scene (1-2 phrases)",
+    "initial_situation": "Ce qui se passe quand le joueur arrive — situation concrete (1-2 phrases)",
     "acts": [
       {
         "act_number": 1,
@@ -258,8 +263,8 @@ JSON strict:
       },
     ],
     responseFormat: { type: "json_object" },
-    temperature: 0.4,
-    maxTokens: 2500,
+    temperature: 0.7,
+    maxTokens: 8000,
     timeoutMs: 90000,
   });
 
@@ -275,9 +280,10 @@ JSON strict:
   }
 
   // calm_narrator is reserved for stage directions (*asterisks*) — never assign to agents
-  const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "stressed_young", "gruff_veteran"]);
-  const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "warm_female"];
+  const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "assertive_female", "stressed_young", "gruff_veteran"]);
+  const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "warm_female", "assertive_female"];
   const MALE_VOICES = new Set<Agent["voice_type"]>(["authoritative_male", "stressed_young", "gruff_veteran"]);
+  const FEMALE_VOICES = new Set<Agent["voice_type"]>(["warm_female", "assertive_female"]);
 
   // Detect feminine French first names heuristically
   function isFeminineName(fullName: string): boolean {
@@ -299,6 +305,7 @@ JSON strict:
     }
     const fallback = VOICE_ROTATION[fallbackIndex % VOICE_ROTATION.length];
     if (female && MALE_VOICES.has(fallback)) return "warm_female";
+    if (!female && FEMALE_VOICES.has(fallback)) return VOICE_ROTATION[fallbackIndex % 3] as Agent["voice_type"]; // pick a male voice
     return fallback;
   }
 
@@ -473,7 +480,7 @@ function fallbackGamePlan(documentText: string, documentTitle: string): GamePlan
     ],
   };
 
-  return { categories, qaPairs, agents, learningAgent, scenario };
+  return { categories, qaPairs, agents, learningAgent, scenario, isFallback: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -543,15 +550,17 @@ export async function prepareGamePlan(
       categories,
       qaPairs,
       documentTitle,
+      documentText.slice(0, 1500),
     );
     console.log(`[prepare] Step 3 done in ${Date.now() - t3}ms — ${agents.length} agents + learning agent`);
     status(`${agents.length + 1} agents generes — finalisation...`);
 
     console.log(`[prepare] Total pipeline: ${Date.now() - t0}ms`);
 
-    return { categories, qaPairs, agents, learningAgent, scenario };
+    return { categories, qaPairs, agents, learningAgent, scenario, isFallback: false };
   } catch (err) {
     console.error("[prepare] Pipeline failed, using fallback:", err instanceof Error ? err.message : String(err));
+    status("⚠️ La generation automatique a echoue. Les questions ne sont pas basees sur votre document. Veuillez relancer la preparation.");
     return fallbackGamePlan(documentText, documentTitle);
   }
 }

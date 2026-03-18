@@ -58,7 +58,7 @@ function sanitizeNarrative(text: string): string {
 
 
 const CONFIRM_REGEX =
-  /\b(ok|compris|d'accord|oui|je comprends|c'est bon|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|go|allons-y|on continue)\b/i;
+  /\b(ok|compris|d'accord|oui|je comprends|c'est bon|entendu|pig[eé]|j'ai compris|bien compris|c'est clair|go|allons-y|on continue|je vois|[çc]a marche|parfait|super|merci|ouais|d'ac|top|nickel|okay|yep|yes|ah oui|exact|effectivement|absolument|tout [àa] fait|je saisis|c'est not[eé]|bien re[çc]u|roger|impec|g[eé]nial|cool|noté)\b/i;
 
 // ---------------------------------------------------------------------------
 // Q&A State Machine helpers
@@ -277,19 +277,33 @@ export async function POST(req: NextRequest) {
         : `Le joueur a dit: "${safePlayerMessage}". Reagis naturellement et pose une question de suivi.`;
     }
   } else if (phase === "COMPLETE") {
-    agentPrompt = "La simulation est terminee. Felicite le joueur et fais un bilan encourageant en 2-3 phrases.";
+    const totalQAs = gamePlan.qaPairs.length;
+    const completedCount = interactionState.completedQAs.length;
+    const failedCount = interactionState.failedQAs.length;
+    const categoryNames = gamePlan.categories.map((c) => c.name).join(", ");
+    const totalCategories = gamePlan.categories.length;
+    const overallScore = computeWeightedScore(gameState.scores);
+    agentPrompt = `La simulation est terminee. Voici les donnees de la session :
+- Questions reussies : ${completedCount}/${totalQAs}
+- Questions echouees (passees au learning) : ${failedCount}
+- Themes abordes (${totalCategories}) : ${categoryNames}
+- Score global : ${overallScore}/100
+
+Fais un bilan en 2-3 phrases dans le ton de ton personnage — pas de felicitations scolaires. Mentionne au moins un theme aborde et reste naturel. Si le score est eleve, montre que tu es impressionne a ta maniere. Si le score est moyen, reste encourageant sans condescendance.`;
     simulationComplete = true;
   } else if (phase === "LEARNING") {
     speakerType = "learning";
-    // Learning mode: check if player confirmed understanding
-    if (!isKickoff && CONFIRM_REGEX.test(safePlayerMessage)) {
-      // Player understood — switch back to category agent, re-ask
+    const currentLearningTurns = interactionState.learningTurns ?? 0;
+    // Learning mode: check if player confirmed understanding OR auto-advance after 3 turns
+    if (!isKickoff && (CONFIRM_REGEX.test(safePlayerMessage) || currentLearningTurns >= 2)) {
+      // Player understood (or 3 exchanges reached) — switch back to category agent, re-ask
       const catAgent = gamePlan.agents[interactionState.currentCategoryIndex];
       if (catAgent) {
         shouldSwitchAgent = true;
         switchToAgentId = catAgent.id;
         nextState.phase = "RE_ASKING";
         nextState.failCount = 2; // keep fail count for scoring
+        nextState.learningTurns = 0;
         agentPrompt = `Le joueur a compris l'explication. Encourage-le brievement et fais une transition naturelle vers ${catAgent.name} qui va reprendre. Exemple : "Tres bien, vous avez saisi l'essentiel ! Je vous laisse avec ${catAgent.name} pour continuer."`;
 
         // Emotion: learning complete
@@ -297,24 +311,31 @@ export async function POST(req: NextRequest) {
       }
     } else if (isKickoff) {
       // Learning agent kickoff — explain the answer grounded in the document
+      nextState.learningTurns = 0;
       const sourceRef = currentQA.source_excerpt
         ? `\n\nEXTRAIT DU DOCUMENT SOURCE: "${currentQA.source_excerpt}"\n\nBase ton explication UNIQUEMENT sur cet extrait du document. Ne donne pas d'information qui n'est pas dans le document.`
         : "";
-      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine par "Compris ?" ou une question de verification equivalente.`;
+      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine en demandant si c'est clair pour lui.\n\nINTERDICTION ABSOLUE: ne pose AUCUNE nouvelle question de formation, de reflexion ou de mise en situation. Tu dois UNIQUEMENT expliquer la reponse et verifier que le joueur a compris CE point precis. Pas de "Pourquoi penses-tu que...", pas de "A ton avis...", pas de question supplementaire.`;
     } else {
       // Player said something but didn't confirm — continue explaining
+      nextState.learningTurns = currentLearningTurns + 1;
       const sourceRef = currentQA.source_excerpt
         ? ` Rappel — le document dit: "${currentQA.source_excerpt}".`
         : "";
-      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication en te basant sur le document.${sourceRef} Reformule si besoin pour etre plus claire. Redemande s'il a compris.`;
+      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication en te basant sur le document.${sourceRef} Reformule si besoin pour etre plus claire. Redemande si c'est clair.\n\nINTERDICTION ABSOLUE: ne pose AUCUNE nouvelle question de formation, de reflexion ou de mise en situation. Tu expliques UNIQUEMENT ce point precis, rien d'autre.`;
     }
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
     const isFirst = gameState.conversationHistory.length === 0;
     const situation = currentQA.situation ? `CONTEXTE DE LA SCENE: ${currentQA.situation}` : "";
 
-    if (isFirst) {
-      agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 1 a 2 phrases). Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
+    if (phase === "RE_ASKING") {
+      // After learning phase — reformulate the question differently
+      agentPrompt = `${situation}\nReprends la question en la reformulant. Le joueur vient de recevoir une explication, c'est l'occasion de valider sa comprehension. Reformule la question de maniere differente, en lien avec l'explication. Ne repose PAS la question mot pour mot. Question originale (a reformuler): "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse.`;
+    } else if (isFirst) {
+      const globalSetting = gamePlan.scenario?.setting || "";
+      const globalSituation = gamePlan.scenario?.initial_situation || "";
+      agentPrompt = `CADRE GENERAL: ${globalSetting} ${globalSituation}\n${situation}\nCommence par une didascalie entre *asterisques* qui plante le decor de maniere immersive (lieu, ambiance, details sensoriels — 2 a 3 phrases). Pose le cadre general pour que le joueur comprenne OU il est, POURQUOI il est la et QUEL est son role. Puis presente-toi naturellement et amene la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse, tu la poses, tu ne la donnes pas.`;
     } else {
       agentPrompt = `${situation}\nCommence par une didascalie entre *asterisques* qui fait avancer la scene (transition, nouveau detail d'ambiance, action d'un personnage — 1 a 2 phrases). Puis enchaine naturellement avec la question: "${currentQA.question}". RAPPEL: ne revele JAMAIS la reponse.`;
     }
@@ -350,7 +371,7 @@ export async function POST(req: NextRequest) {
         // All done!
         nextState.phase = "COMPLETE";
         simulationComplete = true;
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de fin de scene qui conclut l'histoire*. Felicite-le chaleureusement et conclus la simulation avec un mot d'encouragement.`;
+        agentPrompt = `La reponse du joueur est correcte et la simulation touche a sa fin. *Didascalie de fin de scene qui conclut l'histoire*. Conclus la scene de maniere coherente avec ton personnage — reagis comme tu le ferais dans la vraie vie, pas avec des felicitations de prof. Termine la scene naturellement.`;
       } else if (next.categoryChanged) {
         // Category done — switch agent
         nextState.currentCategoryIndex = next.nextCategoryIndex;
@@ -369,7 +390,7 @@ export async function POST(req: NextRequest) {
         // Emotion resets on act change
         currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
 
-        agentPrompt = `Le joueur a bien repondu. *Didascalie de transition qui fait evoluer la scene*. Felicite-le et passe naturellement la main a ${nextAgent?.name || "ton collegue"}. Exemple: "*Il hoche la tete, visiblement satisfait.* Bien joue, c'etait la bonne approche. Je vous laisse avec ${nextAgent?.name || "mon collegue"} pour la suite."`;
+        agentPrompt = `La reponse du joueur est correcte. Reagis comme ton personnage le ferait naturellement (pas de felicitations scolaires) et fais une transition narrative ou ${nextAgent?.name || "un nouveau personnage"} entre en scene de maniere organique. Le joueur doit comprendre QUI est cette personne via l'action et le dialogue, pas via une annonce.`;
       } else {
         // Next Q&A in same category
         nextState.currentQAIndex = next.nextQAIndex;
@@ -379,7 +400,7 @@ export async function POST(req: NextRequest) {
         const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
 
         const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-        agentPrompt = `Bonne reponse ! Reagis positivement en une phrase. ${nextSituation}\n*Didascalie qui fait avancer la scene*. Puis enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
+        agentPrompt = `La reponse du joueur est correcte. Reagis de maniere coherente avec ton personnage et la situation — pas de "bravo" ou de felicitations scolaires, reste dans le ton de la scene (un client mecontent peut simplement acquiescer, un collegue presse peut enchainer directement, etc.). ${nextSituation}\n*Didascalie qui fait avancer la scene*. Puis enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
       }
     } else {
       // Wrong answer
@@ -400,7 +421,7 @@ export async function POST(req: NextRequest) {
         if (!next.hasNext) {
           nextState.phase = "COMPLETE";
           simulationComplete = true;
-          agentPrompt = "Ce n'est pas grave, on a fait le tour. Fais un bilan final bienveillant et encourage le joueur a revoir les points difficiles.";
+          agentPrompt = "La simulation touche a sa fin. *Didascalie de conclusion*. Conclus la scene naturellement dans le ton de ton personnage. Mets en valeur ce qui a ete vu ensemble sans insister sur les erreurs.";
         } else if (next.categoryChanged) {
           nextState.currentCategoryIndex = next.nextCategoryIndex;
           nextState.currentQAIndex = next.nextQAIndex;
@@ -410,7 +431,7 @@ export async function POST(req: NextRequest) {
           const nextAgent = gamePlan.agents[next.nextCategoryIndex];
           if (nextAgent) { shouldSwitchAgent = true; switchToAgentId = nextAgent.id; }
           currentEmotion = computeNextEmotion(currentEmotion, { type: "act_change" });
-          agentPrompt = `On avance a la suite. Fais une transition naturelle et passe la main a ${nextAgent?.name || "ton collegue"}. Sois encourageant malgre l'erreur.`;
+          agentPrompt = `Fais une transition naturelle vers la suite sans mentionner l'erreur. ${nextAgent?.name || "Un autre personnage"} entre en scene de maniere organique. Reste dans le ton de la situation.`;
         } else {
           nextState.currentQAIndex = next.nextQAIndex;
           const nextQAId = gamePlan.categories[interactionState.currentCategoryIndex]?.qaPairIds[next.nextQAIndex] || "";
@@ -418,7 +439,7 @@ export async function POST(req: NextRequest) {
           nextState.phase = "ASKING";
           const nextQA = gamePlan.qaPairs.find((qa) => qa.id === nextQAId);
           const nextSituation = nextQA?.situation ? `CONTEXTE: ${nextQA.situation}` : "";
-          agentPrompt = `Ce n'est pas grave, on continue. ${nextSituation}\n*Courte didascalie de transition*. Enchaine naturellement avec la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
+          agentPrompt = `Enchaine naturellement sans commenter l'erreur. ${nextSituation}\n*Courte didascalie de transition*. Amene la question suivante: "${nextQA?.question || ""}". RAPPEL: ne revele JAMAIS la reponse.`;
         }
       } else if (interactionState.failCount === 0) {
         // First fail — rephrase
@@ -430,7 +451,10 @@ export async function POST(req: NextRequest) {
         currentEmotion = computeNextEmotion(currentEmotion, { type: "wrong_answer", failCount: 1 });
 
         const situation = currentQA.situation ? `CONTEXTE: ${currentQA.situation}` : "";
-        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reagis avec empathie, donne un indice ou une piste de reflexion, puis reformule la question differemment: "${currentQA.question}". INTERDIT de donner la reponse, meme partiellement. Oriente la reflexion du joueur sans reveler la solution.`;
+        const keywordsHint = currentQA.keywords.length > 0
+          ? `\nOriente le joueur vers les concepts suivants SANS les nommer directement : [${currentQA.keywords.join(", ")}].`
+          : "";
+        agentPrompt = `Le joueur n'a pas bien repondu. ${situation}\n*Courte reaction en didascalie*. Reagis avec empathie, donne un indice ou une piste de reflexion, puis reformule la question differemment: "${currentQA.question}". INTERDIT de donner la reponse, meme partiellement. Oriente la reflexion du joueur sans reveler la solution.${keywordsHint}`;
       } else {
         // Second fail — switch to learning mode
         if (cat) scoreUpdate = { categoryName: cat.name, delta: -Math.round(maxPointsPerQuestion * 0.3) };
@@ -444,7 +468,7 @@ export async function POST(req: NextRequest) {
         shouldSwitchAgent = true;
         switchToAgentId = gamePlan.learningAgent.id;
 
-        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction (frustration ou compassion selon ta personnalite)*. Passe naturellement la main a ${gamePlan.learningAgent.name} pour qu'elle explique. Exemple: "*Il soupire, visiblement preoccupe.* Bon, je vais laisser ${gamePlan.learningAgent.name} vous expliquer ca plus en detail."`;
+        agentPrompt = `Le joueur s'est trompe 2 fois. *Courte didascalie de reaction coherente avec ta personnalite*. Fais intervenir ${gamePlan.learningAgent.name} de maniere naturelle dans la scene — elle etait deja la, elle prend la parole pour aider. Pas de soupir, pas de condescendance.`;
       }
     }
   }
@@ -467,6 +491,14 @@ export async function POST(req: NextRequest) {
     return a;
   });
 
+  // Compute progress info
+  const mergedInteraction = { ...interactionState, ...nextState };
+  const progressCurrentQuestion = (mergedInteraction.completedQAs?.length ?? interactionState?.completedQAs?.length ?? 0) + 1;
+  const progressTotalQuestions = gamePlan?.qaPairs?.length ?? 0;
+  const progressCurrentCategoryIndex = mergedInteraction.currentCategoryIndex ?? interactionState?.currentCategoryIndex ?? 0;
+  const progressCurrentCategory = gamePlan?.categories?.[progressCurrentCategoryIndex]?.name ?? "";
+  const progressTotalCategories = gamePlan?.categories?.length ?? 0;
+
   const patch: Record<string, unknown> = {
     activeAgentId: shouldSwitchAgent ? switchToAgentId : gameState.activeAgentId,
     triggeredEvents: gameState.triggeredEvents,
@@ -482,6 +514,12 @@ export async function POST(req: NextRequest) {
       ...nextState,
     },
     emotionState: currentEmotion,
+    progress: {
+      currentQuestion: Math.min(progressCurrentQuestion, progressTotalQuestions),
+      totalQuestions: progressTotalQuestions,
+      currentCategory: progressCurrentCategory,
+      totalCategories: progressTotalCategories,
+    },
   };
 
   // Apply score update
