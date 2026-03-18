@@ -162,7 +162,7 @@ export const INITIAL_GAME_STATE: GameState = {
 // Multi-Agent System Types
 // ============================================
 
-export type VoiceType = "authoritative_male" | "warm_female" | "stressed_young" | "calm_narrator" | "gruff_veteran";
+export type VoiceType = "authoritative_male" | "warm_female" | "assertive_female" | "stressed_young" | "calm_narrator" | "gruff_veteran";
 
 export type AgentEmotion = "calm" | "stressed" | "angry" | "panicked" | "suspicious";
 
