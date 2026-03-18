@@ -1688,7 +1688,7 @@ export default function Home() {
                 margin: "0 0 20px 0",
               }}
             >
-              Transformez vos documents en simulations immersives
+              Transformez vos formations en simulations immersives
             </motion.h1>
 
             <motion.p
