@@ -300,13 +300,13 @@ export async function POST(req: NextRequest) {
       const sourceRef = currentQA.source_excerpt
         ? `\n\nEXTRAIT DU DOCUMENT SOURCE: "${currentQA.source_excerpt}"\n\nBase ton explication UNIQUEMENT sur cet extrait du document. Ne donne pas d'information qui n'est pas dans le document.`
         : "";
-      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine par "Compris ?" ou une question de verification equivalente.`;
+      agentPrompt = `Le joueur s'est trompe sur: "${currentQA.question}". La bonne reponse selon le document est: "${currentQA.expected_answer}".${sourceRef}\nExplique clairement pourquoi en citant le document. Sois pedagogique et bienveillante. Termine en demandant si c'est clair pour lui.\n\nINTERDICTION ABSOLUE: ne pose AUCUNE nouvelle question de formation, de reflexion ou de mise en situation. Tu dois UNIQUEMENT expliquer la reponse et verifier que le joueur a compris CE point precis. Pas de "Pourquoi penses-tu que...", pas de "A ton avis...", pas de question supplementaire.`;
     } else {
       // Player said something but didn't confirm — continue explaining
       const sourceRef = currentQA.source_excerpt
         ? ` Rappel — le document dit: "${currentQA.source_excerpt}".`
         : "";
-      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication en te basant sur le document.${sourceRef} Reformule si besoin pour etre plus claire. Redemande s'il a compris.`;
+      agentPrompt = `Le joueur a dit: "${safePlayerMessage}". Continue l'explication en te basant sur le document.${sourceRef} Reformule si besoin pour etre plus claire. Redemande si c'est clair.\n\nINTERDICTION ABSOLUE: ne pose AUCUNE nouvelle question de formation, de reflexion ou de mise en situation. Tu expliques UNIQUEMENT ce point precis, rien d'autre.`;
     }
   } else if (isKickoff) {
     // ASKING or RE_ASKING kickoff — agent poses the question
