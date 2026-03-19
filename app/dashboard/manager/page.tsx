@@ -166,7 +166,7 @@ export default function ManagerDashboard() {
               lineHeight: 1.2,
             }}
           >
-            {greeting()}, {profile?.full_name?.split(" ")[0] || "Manager"}
+            {greeting()} {profile?.full_name?.split(" ")[0] || "Manager"},
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 10 }}
