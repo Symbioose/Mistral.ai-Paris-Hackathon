@@ -1,6 +1,7 @@
 import { createClient } from "@/app/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { prepareGamePlan } from "@/app/lib/agents/prepare";
+import { ingestDocument } from "@/app/lib/copilot/ingest";
 
 export const maxDuration = 120; // AI generation can take 10-30s
 
@@ -72,6 +73,13 @@ export async function POST(
       // Revert to draft on DB error
       await supabase.from("trainings").update({ status: "draft" }).eq("id", id);
       return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    // Ingest document for Copilot RAG (non-blocking — don't fail publish if this fails)
+    try {
+      await ingestDocument(id, training.document_text);
+    } catch (ingestErr) {
+      console.error("[publish] Copilot ingestion failed (non-blocking):", ingestErr);
     }
 
     return NextResponse.json({ training: updated });
