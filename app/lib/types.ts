@@ -361,3 +361,23 @@ export interface MissionFeedItem {
   emotion?: string;
   detail?: string;
 }
+
+// ============================================
+// Copilot RAG Types
+// ============================================
+
+export interface DocumentChunk {
+  id: string;
+  training_id: string;
+  chunk_index: number;
+  content: string;
+  start_char: number;
+  end_char: number;
+  similarity?: number;
+}
+
+export interface CopilotMessage {
+  role: "user" | "assistant";
+  content: string;
+  sources?: DocumentChunk[];
+}
