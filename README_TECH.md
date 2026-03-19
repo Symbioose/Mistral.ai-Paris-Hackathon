@@ -10,6 +10,7 @@ app/
 │   │   ├── logout/           # POST — Deconnexion
 │   │   └── signup/           # POST — Inscription (token requis pour manager)
 │   ├── chat/                 # POST — SSE : machine a etats Q&A + evaluation
+│   ├── copilot/[trainingId]/ # POST — Chat Copilot RAG (recherche vectorielle + reponse LLM)
 │   ├── deepgram/             # GET — Cle temporaire Deepgram pour STT client
 │   ├── enrollments/[id]/
 │   │   └── save/             # POST — Sauvegarde progression (verrou optimiste)
@@ -21,12 +22,15 @@ app/
 │   │   └── [id]/
 │   │       ├── GET/DELETE    # Lecture/suppression formation
 │   │       ├── publish/      # POST — Publication + generation game plan
-│   │       └── enrollments/  # GET — Liste inscriptions (analytics manager)
+│   │       ├── enrollments/  # GET — Liste inscriptions (analytics manager)
+│   │       └── copilot-analytics/ # GET — Themes + requetes recentes Copilot
 │   ├── tts/                  # POST — Synthese vocale ElevenLabs
 │   └── upload/               # POST — Extraction texte PDF/TXT
 ├── components/
+│   ├── copilot/              # ChatPanel (chat RAG), DocumentViewer (PDF viewer)
 │   ├── dashboard/            # TrainingCard, EnrollmentCard, CreateTrainingModal,
-│   │                         # TrainingAnalyticsModal, EmptyState, DashboardLayout
+│   │                         # TrainingAnalyticsModal (onglets Apprenants/Copilot),
+│   │                         # EmptyState, DashboardLayout
 │   ├── ActiveAgentDisplay    # Agent actif avec badge emotion
 │   ├── AgentGenerationView   # Phase d'orchestration (graphe SVG anime)
 │   ├── AgentPanel            # Liste agents + journal d'evenements
@@ -51,6 +55,11 @@ app/
 │   │   └── agent-factory     # Construction system prompts avec RAG
 │   ├── game/
 │   │   └── state             # Init game state, scoring, switch agent
+│   ├── copilot/
+│   │   ├── chunking          # Chunking document + detection headings (regex)
+│   │   ├── embeddings        # Embeddings OpenAI text-embedding-3-small
+│   │   ├── ingest            # Pipeline ingestion : chunk → label → embed → upsert
+│   │   └── labeling          # Labeling thematique LLM (taxonomie 5-8 themes)
 │   ├── supabase/
 │   │   ├── client            # Client navigateur (anon key)
 │   │   ├── server            # Client serveur (cookies)
@@ -121,6 +130,28 @@ app/
 | version | int | Verrou optimiste |
 | last_played_at | timestamp? | Derniere activite |
 
+**document_chunks** *(chunks vectoriels pour le Copilot RAG)*
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | |
+| training_id | UUID FK | Formation associee |
+| chunk_index | int | Index du chunk dans le document |
+| content | text | Texte du chunk |
+| section_title | text? | Theme/section attribue (heading ou LLM) |
+| embedding | vector(1536) | Embedding OpenAI text-embedding-3-small |
+
+**copilot_queries** *(log anonyme des questions Copilot — analytics manager)*
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| id | UUID PK | |
+| training_id | UUID FK | Formation associee |
+| query_text | text | Question posee par l'apprenant |
+| section_title | text? | Theme du chunk le plus pertinent (denormalise) |
+| chunk_ids | jsonb | Index des chunks utilises pour la reponse |
+| created_at | timestamptz | Date de la requete |
+
 **manager_invites** *(acces service_role uniquement — aucune politique RLS publique)*
 
 | Colonne | Type | Description |
@@ -137,6 +168,8 @@ app/
 | profiles | Lecture propre profil |
 | trainings | Manager CRUD propres formations, student lecture published |
 | enrollments | Student RW propres inscriptions, manager lecture pour ses formations |
+| document_chunks | INSERT/SELECT pour manager owner, SELECT pour students inscrits |
+| copilot_queries | INSERT pour students inscrits et manager owner, SELECT pour manager owner |
 | manager_invites | Aucune politique publique — service_role uniquement |
 
 ### Clients Supabase
@@ -306,6 +339,48 @@ BM25 maison (zero dependance) dans `rag.ts` :
 - Scoring : BM25 (k1=1.2, b=0.75)
 - Top-K chunks injectes dans le system prompt de chaque agent
 - Garantit l'ancrage des reponses dans le document source
+
+---
+
+## Copilot RAG (vectoriel)
+
+Pipeline complementaire au BM25 ci-dessus, utilisant des embeddings vectoriels pour le Copilot documentaire.
+
+### Ingestion (a la publication)
+
+```
+Document text
+  → chunkDocument() : 500 chars, overlap 100, detection headings regex
+  → labelChunksWithLLM() : si < 50% chunks ont un heading → taxonomie LLM (5-8 themes)
+  → generateEmbeddings() : OpenAI text-embedding-3-small, batches de 100
+  → Upsert document_chunks (content, section_title, embedding)
+```
+
+Detection headings : markdown (`#`), numerotes (`1.`), ALL CAPS, chiffres romains, lignes courtes (< 60 chars).
+
+Labeling LLM : un appel unique `gpt-4.1-mini` (JSON mode) qui extrait 5-8 themes globaux puis assigne chaque chunk a exactement un theme. Evite les variantes (`Remboursement` vs `Remboursements`).
+
+### Chat Copilot (`/api/copilot/[trainingId]`)
+
+```
+Question apprenant
+  → Embedding de la question (text-embedding-3-small)
+  → match_chunks RPC : cosine similarity top-5 (pgvector)
+  → System prompt avec chunks + consignes citation
+  → Streaming LLM (gpt-4.1-mini) avec references "Source N"
+  → after() : log anonyme dans copilot_queries (section_title denormalise)
+```
+
+Le logging utilise `after()` (Next.js) avec `createAdminClient()` pour un fire-and-forget serverless-safe.
+
+### Analytics Copilot (`/api/trainings/[id]/copilot-analytics`)
+
+Agregation JS cote serveur des `copilot_queries` par `section_title`. Retourne :
+- Classement des themes les plus interroges (avec pourcentage)
+- Nombre total de requetes
+- 20 dernieres questions (anonymisees, avec section et date)
+
+Accessible dans le dashboard manager via l'onglet "Copilot" de la modale analytics.
 
 ---
 

@@ -1,6 +1,6 @@
 # YouGotIt
 
-SaaS B2B de formation gamifiee par mise en situation. Un manager upload un document, l'app genere un scenario multi-agents avec des Q&A via OpenAI. L'apprenant interagit vocalement avec des personnages IA qui le testent sur le contenu. En fin de session, un rapport de competences est genere.
+SaaS B2B de formation gamifiee par mise en situation. Un manager upload un document, l'app genere un scenario multi-agents avec des Q&A via OpenAI. L'apprenant interagit vocalement avec des personnages IA qui le testent sur le contenu. Un Copilot RAG permet de poser des questions sur le document, et le manager visualise les analytics de sa formation.
 
 ## Fonctionnalites
 
@@ -9,10 +9,12 @@ SaaS B2B de formation gamifiee par mise en situation. Un manager upload un docum
 - Upload de documents PDF/TXT, generation automatique de formations
 - Publication avec code d'acces pour les apprenants
 - Dashboard analytics : progression, scores, taux de completion par apprenant
+- Copilot Analytics : classement des themes les plus demandes au Copilot, questions recentes anonymisees
 
 **Apprenant**
 - Inscription libre, rejoindre une formation via un code
 - Simulation immersive avec agents IA vocaux (TTS/STT)
+- Copilot documentaire : poser des questions sur le document de formation avec citations et sources
 - Pause/reprise de session
 - Rapport de competences en fin de session
 
@@ -22,8 +24,9 @@ SaaS B2B de formation gamifiee par mise en situation. Un manager upload un docum
 |--------|-------------|
 | Frontend | Next.js 16 (App Router) + React 19 + TypeScript |
 | Styling | Tailwind CSS 4 + Framer Motion |
-| Auth & DB | Supabase (Auth + PostgreSQL + Storage + RLS) |
-| LLM | OpenAI `gpt-4.1-mini` (preparation) + `gpt-4.1-nano` (temps reel) |
+| Auth & DB | Supabase (Auth + PostgreSQL + pgvector + Storage + RLS) |
+| LLM | OpenAI `gpt-4.1-mini` (preparation, copilot, labeling) |
+| Embeddings | OpenAI `text-embedding-3-small` (Copilot RAG) |
 | TTS | ElevenLabs `eleven_turbo_v2_5` (5 voix, modulation emotionnelle) |
 | STT | Deepgram `nova-2` (WebSocket streaming, francais) |
 | SFX | Web Audio API (procedural) |
@@ -93,8 +96,11 @@ Le token est consomme automatiquement (`is_used = true`) lors de l'inscription. 
 
 1. **Upload** — Le manager depose un document PDF ou TXT
 2. **Orchestration** — 3 appels LLM generent Q&A, categories et agents (~10s)
-3. **Simulation** — L'apprenant repond vocalement, les agents reagissent avec emotion
-4. **Rapport** — Analyse de competences avec lacunes et recommandations
+3. **Ingestion Copilot** — Le document est chunke, labellise par section et indexe (embeddings vectoriels)
+4. **Simulation** — L'apprenant repond vocalement, les agents reagissent avec emotion
+5. **Copilot** — L'apprenant peut poser des questions sur le document (RAG avec citations)
+6. **Rapport** — Analyse de competences avec lacunes et recommandations
+7. **Analytics Copilot** — Le manager voit les themes les plus interroges + les questions recentes
 
 ### Machine a etats Q&A
 
