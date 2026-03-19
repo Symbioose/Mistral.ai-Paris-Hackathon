@@ -47,7 +47,7 @@ Si <50% des chunks ont un `sectionTitle` après la détection regex, déclencher
 
 Cette approche en 2 temps garantit qu'aucun label en double n'apparaîtra (pas de "Remboursement" vs "Remboursements") puisque chaque chunk est assigné à un thème de la liste fermée.
 
-**Gestion des gros documents** : si le texte total dépasse la fenêtre de contexte, envoyer un résumé (premières phrases de chaque chunk) plutôt que le contenu intégral.
+**Gestion des gros documents** : `gpt-4.1-mini` a 128k tokens de contexte, ce qui couvre la grande majorité des documents de formation. Si le nombre de chunks dépasse 200, envoyer uniquement les 2 premières phrases de chaque chunk plutôt que le contenu intégral.
 
 #### Stockage
 
@@ -59,11 +59,12 @@ Colonne ajoutée : `document_chunks.section_title TEXT` (nullable, peuplée à l
 
 ```sql
 CREATE TABLE copilot_queries (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  training_id UUID NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
-  query_text  TEXT NOT NULL,
-  chunk_ids   JSONB NOT NULL,  -- array de chunk_index, ex: [2, 5, 12]
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  training_id   UUID NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+  query_text    TEXT NOT NULL,
+  section_title TEXT,  -- dénormalisé depuis document_chunks pour résistance au re-publish
+  chunk_ids     JSONB NOT NULL,  -- array de chunk_index, ex: [2, 5, 12]
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_copilot_queries_training ON copilot_queries(training_id);
@@ -72,6 +73,8 @@ CREATE INDEX idx_copilot_queries_training ON copilot_queries(training_id);
 **Pas de `user_id`** — les questions sont anonymes par design (on ne flique pas les élèves, on repère les trous dans le document).
 
 **`query_text`** — le texte exact de la question posée par l'apprenant. Permet au manager de comprendre le contexte derrière les chiffres.
+
+**`section_title` dénormalisé** — stocké directement à l'insert (section du chunk top-1 par similarité). Ceci rend les analytics résistantes au re-publish du document (les chunk_index peuvent changer, mais le section_title reste valide). L'analytics agrège sur cette colonne plutôt que de joindre document_chunks.
 
 #### RLS
 
@@ -83,19 +86,32 @@ CREATE INDEX idx_copilot_queries_training ON copilot_queries(training_id);
 Dans `app/api/copilot/[trainingId]/route.ts`, après le `match_chunks` et avant le stream :
 
 ```typescript
-// Fire-and-forget avec waitUntil pour survie en serverless (Vercel)
-const insertPromise = supabase.from("copilot_queries").insert({
-  training_id: trainingId,
-  query_text: safeMessage,
-  chunk_ids: chunks.map(c => c.chunk_index),
-});
-
-// Utiliser waitUntil de Next.js pour que l'insert survive après la fin du stream
 // Import: import { after } from 'next/server'
-after(insertPromise);
+// after() prend un CALLBACK (pas une Promise) — l'insert ne démarre qu'après le stream
+after(async () => {
+  try {
+    // section_title dénormalisé : on prend la section du chunk top-1 (plus haute similarité)
+    const topChunk = chunks[0]; // chunks sont déjà triés par similarité desc
+    const { data: chunkData } = await supabase
+      .from("document_chunks")
+      .select("section_title")
+      .eq("training_id", trainingId)
+      .eq("chunk_index", topChunk.chunk_index)
+      .single();
+
+    await supabase.from("copilot_queries").insert({
+      training_id: trainingId,
+      query_text: safeMessage,
+      section_title: chunkData?.section_title || null,
+      chunk_ids: chunks.map(c => c.chunk_index),
+    });
+  } catch (err) {
+    console.error("[copilot] failed to log query:", err);
+  }
+});
 ```
 
-`after()` (Next.js 15+) garantit que la Promise s'exécute même après que la Response SSE est envoyée et la fonction serverless terminée. C'est l'équivalent officiel de `waitUntil` pour Next.js sur Vercel.
+`after()` (Next.js 15+) prend un **callback** qui s'exécute après que la Response est envoyée. Cela garantit la survie de l'insert en serverless (Vercel) sans bloquer le stream. Le try/catch assure que les erreurs d'insert sont loggées sans impact sur l'UX.
 
 ### 3. API Analytics + UI
 
@@ -104,10 +120,10 @@ after(insertPromise);
 **Auth** : manager owner du training uniquement.
 
 **Query SQL** :
-- Dénormaliser `copilot_queries.chunk_ids` (JSONB array) en lignes
-- Joindre sur `document_chunks` via `training_id` + `chunk_index`
-- Grouper par `section_title`, compter les occurrences
+- Grouper `copilot_queries` par `section_title` (dénormalisé, pas de join nécessaire)
+- Compter les queries uniques par section (COUNT DISTINCT sur `id`)
 - Ordonner par count décroissant
+- Les rows avec `section_title IS NULL` sont groupées sous "Non classé"
 
 **Response :**
 ```json
