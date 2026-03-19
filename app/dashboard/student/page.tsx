@@ -74,6 +74,10 @@ export default function StudentDashboard() {
     router.push(`/?training=${enrollment.trainings.id}&enrollment=${enrollment.id}`);
   };
 
+  const handleCopilot = (enrollment: Enrollment) => {
+    router.push(`/copilot/${enrollment.trainings.id}`);
+  };
+
   const greeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return "Bonjour";
@@ -456,6 +460,7 @@ export default function StudentDashboard() {
               enrollment={enrollment}
               index={i}
               onPlay={handlePlay}
+              onCopilot={handleCopilot}
             />
           ))}
         </motion.div>
