@@ -84,6 +84,7 @@ export default function TrainingAnalyticsModal({ isOpen, onClose, training }: Tr
     if (!isOpen || !training) return;
     setSelectedLearner(null);
     setActiveTab("learners");
+    setCopilotData(null);
     let cancelled = false;
 
     const fetchEnrollments = async () => {

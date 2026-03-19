@@ -96,7 +96,8 @@ Rules:
       ],
       responseFormat: { type: "json_object" },
       temperature: 0.2,
-      maxTokens: 2048,
+      maxTokens: 4096,
+      timeoutMs: 30000,
     });
 
     raw = message.content ?? "";
