@@ -53,7 +53,7 @@ function renderMessageContent(
             }}
             title="Voir dans le document"
           >
-            {part}
+            📄 Source {chunkIndex + 1}
           </button>
         );
       }
