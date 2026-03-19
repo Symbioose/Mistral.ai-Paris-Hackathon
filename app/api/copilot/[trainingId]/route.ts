@@ -67,6 +67,9 @@ export async function POST(
     return new Response(JSON.stringify({ error: "Message requis" }), { status: 400 });
   }
 
+  // Sanitize user message length
+  const safeMessage = message.slice(0, 2000);
+
   // Validate history — only allow user/assistant roles, limit to 10
   const safeHistory = (history || [])
     .filter((h) => h.role === "user" || h.role === "assistant")
@@ -74,7 +77,7 @@ export async function POST(
     .map((h) => ({ role: h.role as "user" | "assistant", content: h.content.slice(0, 2000) }));
 
   // 1. Embed the query
-  const queryEmbedding = await generateQueryEmbedding(message);
+  const queryEmbedding = await generateQueryEmbedding(safeMessage);
 
   // 2. Semantic search via match_chunks RPC
   const { data: chunks, error: matchError } = await supabase.rpc("match_chunks", {
@@ -97,7 +100,7 @@ export async function POST(
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: `${SYSTEM_PROMPT}\n\nPassages du document :\n${contextBlock}` },
     ...safeHistory,
-    { role: "user", content: message },
+    { role: "user", content: safeMessage },
   ];
 
   // 4. Stream response via SSE
