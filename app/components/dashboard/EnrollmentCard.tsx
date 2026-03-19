@@ -47,9 +47,10 @@ interface EnrollmentCardProps {
   enrollment: Enrollment;
   index: number;
   onPlay: (enrollment: Enrollment) => void;
+  onCopilot?: (enrollment: Enrollment) => void;
 }
 
-export default function EnrollmentCard({ enrollment, index, onPlay }: EnrollmentCardProps) {
+export default function EnrollmentCard({ enrollment, index, onPlay, onCopilot }: EnrollmentCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const status = STATUS_CONFIG[enrollment.status];
 
@@ -251,6 +252,18 @@ export default function EnrollmentCard({ enrollment, index, onPlay }: Enrollment
           onClick={() => onPlay(enrollment)}
           variant="primary"
         />
+        {onCopilot && (
+          <ActionButton
+            label="Copilote"
+            icon={
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              </svg>
+            }
+            onClick={() => onCopilot(enrollment)}
+            variant="default"
+          />
+        )}
       </div>
     </motion.div>
   );

@@ -46,7 +46,7 @@ export async function DELETE(
   return NextResponse.json({ success: true });
 }
 
-// GET /api/trainings/[id] — get a single training
+// GET /api/trainings/[id] — get a single training (manager owner or enrolled student)
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -59,29 +59,29 @@ export async function GET(
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
 
-  // Fetch profile to determine role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isManager = profile?.role === "manager";
-
-  let query = supabase
+  // Fetch training
+  const { data: training, error: fetchError } = await supabase
     .from("trainings")
     .select("*, enrollments(count)")
-    .eq("id", id);
+    .eq("id", id)
+    .single();
 
-  // Managers can only see their own trainings
-  if (isManager) {
-    query = query.eq("manager_id", user.id);
+  if (fetchError || !training) {
+    return NextResponse.json({ error: "Formation introuvable" }, { status: 404 });
   }
 
-  const { data: training, error } = await query.single();
+  // Access check: must be the manager who owns it OR an enrolled student
+  if (training.manager_id !== user.id) {
+    const { data: enrollment } = await supabase
+      .from("enrollments")
+      .select("id")
+      .eq("training_id", id)
+      .eq("student_id", user.id)
+      .limit(1);
 
-  if (error || !training) {
-    return NextResponse.json({ error: "Formation introuvable" }, { status: 404 });
+    if (!enrollment || enrollment.length === 0) {
+      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    }
   }
 
   return NextResponse.json({ training });
