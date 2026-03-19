@@ -1,8 +1,10 @@
 // app/api/copilot/[trainingId]/route.ts
 
+import { after } from "next/server";
 import { createClient } from "@/app/lib/supabase/server";
 import { generateQueryEmbedding } from "@/app/lib/copilot/embeddings";
 import { getClient } from "@/app/lib/agents/openai-client";
+import { createAdminClient } from "@/app/lib/supabase/admin";
 
 export const maxDuration = 60;
 
@@ -95,6 +97,30 @@ export async function POST(
   if (!chunks || chunks.length === 0) {
     return new Response(JSON.stringify({ error: "Aucun contenu indexé pour cette formation" }), { status: 404 });
   }
+
+  // Log query anonymously for Copilot Analytics (fire-and-forget via after())
+  after(async () => {
+    try {
+      const adminDb = createAdminClient();
+      // Resolve section_title from the top-1 chunk (highest similarity)
+      const topChunk = chunks[0];
+      const { data: chunkMeta } = await adminDb
+        .from("document_chunks")
+        .select("section_title")
+        .eq("training_id", trainingId)
+        .eq("chunk_index", topChunk.chunk_index)
+        .single();
+
+      await adminDb.from("copilot_queries").insert({
+        training_id: trainingId,
+        query_text: safeMessage,
+        section_title: chunkMeta?.section_title || null,
+        chunk_ids: chunks.map((c: { chunk_index: number }) => c.chunk_index),
+      });
+    } catch (err) {
+      console.error("[copilot] failed to log query:", err);
+    }
+  });
 
   // 3. Build messages for LLM
   const contextBlock = buildContextPrompt(chunks);

@@ -197,8 +197,8 @@ Genere EXACTEMENT ${categories.length} agent(s) (un par categorie) + 1 agent ped
 
 REGLES AGENTS:
 - Chaque agent correspond a UNE categorie et a une personnalite distincte
-- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, assertive_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, reserve au narrateur systeme)
-- Si le personnage est une femme, voice_type parmi "warm_female" ou "assertive_female" selon sa personnalite (chaleureuse = warm_female, directe/autoritaire = assertive_female)
+- voice_type UNIQUEMENT parmi: authoritative_male, warm_female, stressed_young, gruff_veteran (JAMAIS calm_narrator, reserve au narrateur systeme)
+- Si le personnage est une femme (prenom feminin), voice_type OBLIGATOIREMENT "warm_female"
 - Personnalites OPPOSEES entre agents (un presse vs un methodique, un strict vs un bienveillant)
 - intro_line: reaction a la situation, pas une presentation generique. 15 MOTS MAXIMUM. Pas d'asterisques.
 - Pas d'apostrophes typographiques dans intro_line
@@ -281,10 +281,9 @@ JSON strict:
   }
 
   // calm_narrator is reserved for stage directions (*asterisks*) — never assign to agents
-  const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "assertive_female", "stressed_young", "gruff_veteran"]);
+  const VALID_AGENT_VOICES = new Set(["authoritative_male", "warm_female", "stressed_young", "gruff_veteran"]);
   const VOICE_ROTATION: Agent["voice_type"][] = ["authoritative_male", "stressed_young", "gruff_veteran", "warm_female"];
   const MALE_VOICES = new Set<Agent["voice_type"]>(["authoritative_male", "stressed_young", "gruff_veteran"]);
-  const FEMALE_VOICES = new Set<Agent["voice_type"]>(["warm_female", "assertive_female"]);
 
   // Detect feminine French first names heuristically
   function isFeminineName(fullName: string): boolean {
@@ -301,11 +300,11 @@ JSON strict:
     const female = isFeminineName(name);
     if (VALID_AGENT_VOICES.has(rawVoice)) {
       const v = rawVoice as Agent["voice_type"];
-      if (female && MALE_VOICES.has(v)) return "assertive_female";
+      if (female && MALE_VOICES.has(v)) return "warm_female";
       return v;
     }
     const fallback = VOICE_ROTATION[fallbackIndex % VOICE_ROTATION.length];
-    if (female && MALE_VOICES.has(fallback)) return "assertive_female";
+    if (female && MALE_VOICES.has(fallback)) return "warm_female";
     return fallback;
   }
 
