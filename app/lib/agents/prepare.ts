@@ -297,8 +297,6 @@ JSON strict:
     return femaleNames.has(first);
   }
 
-  const FEMALE_VOICES = new Set<Agent["voice_type"]>(["warm_female", "assertive_female"]);
-
   function resolveAgentVoice(rawVoice: string, name: string, fallbackIndex: number): Agent["voice_type"] {
     const female = isFeminineName(name);
     if (VALID_AGENT_VOICES.has(rawVoice)) {
