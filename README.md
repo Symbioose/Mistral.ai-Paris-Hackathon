@@ -1,50 +1,50 @@
 # YouGotIt
 
-SaaS B2B de formation gamifiee par mise en situation. Un manager upload un document, l'app genere un scenario multi-agents avec des Q&A via OpenAI. L'apprenant interagit vocalement avec des personnages IA qui le testent sur le contenu. Un Copilot RAG permet de poser des questions sur le document, et le manager visualise les analytics de sa formation.
+B2B gamified training SaaS powered by AI role-play. A manager uploads a document, the app generates a multi-agent scenario with Q&A via OpenAI. The learner interacts vocally with AI characters who test them on the content. A RAG Copilot lets learners ask questions about the document, and the manager can track training analytics.
 
-## Fonctionnalites
+## Features
 
 **Manager**
-- Inscription par token d'invitation B2B
-- Upload de documents PDF/TXT, generation automatique de formations
-- Publication avec code d'acces pour les apprenants
-- Dashboard analytics : progression, scores, taux de completion par apprenant
-- Copilot Analytics : classement des themes les plus demandes au Copilot, questions recentes anonymisees
+- Signup via single-use B2B invitation token
+- Upload PDF/TXT documents, automatic training generation
+- Publish with access code for learners
+- Analytics dashboard: progress, scores, completion rate per learner
+- Copilot Analytics: most-queried topics ranking, recent anonymized questions
 
-**Apprenant**
-- Inscription libre, rejoindre une formation via un code
-- Simulation immersive avec agents IA vocaux (TTS/STT)
-- Copilot documentaire : poser des questions sur le document de formation avec citations et sources
-- Pause/reprise de session
-- Rapport de competences en fin de session
+**Learner**
+- Free signup, join a training via code
+- Immersive simulation with voice-driven AI agents (TTS/STT)
+- Document Copilot: ask questions about the training document with citations and sources
+- Pause/resume session
+- Skills report at end of session
 
 ## Stack
 
-| Couche | Technologie |
-|--------|-------------|
+| Layer | Technology |
+|-------|------------|
 | Frontend | Next.js 16 (App Router) + React 19 + TypeScript |
 | Styling | Tailwind CSS 4 + Framer Motion |
 | Auth & DB | Supabase (Auth + PostgreSQL + pgvector + Storage + RLS) |
 | LLM | OpenAI `gpt-4.1-mini` (preparation, copilot, labeling) |
 | Embeddings | OpenAI `text-embedding-3-small` (Copilot RAG) |
-| TTS | ElevenLabs `eleven_turbo_v2_5` (5 voix, modulation emotionnelle) |
-| STT | Deepgram `nova-2` (WebSocket streaming, francais) |
+| TTS | ElevenLabs `eleven_turbo_v2_5` (5 voices, emotion modulation) |
+| STT | Deepgram `nova-2` (WebSocket streaming, French) |
 | SFX | Web Audio API (procedural) |
 
-## Demarrage rapide
+## Quick Start
 
 ```bash
-git clone <repo-url>
-cd mistral_game
+git clone https://github.com/emmusic/YouGotIt.git
+cd YouGotIt
 npm install
 cp .env.example .env.local
-# Remplir les variables dans .env.local
+# Fill in the variables in .env.local
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000)
 
-### Variables d'environnement
+### Environment Variables
 
 ```env
 # Supabase
@@ -68,70 +68,70 @@ DEEPGRAM_API_KEY=
 DEEPGRAM_PROJECT_ID=
 ```
 
-## Creer un token d'invitation Manager
+## Creating a Manager Invitation Token
 
-L'inscription manager est protegee par un systeme de tokens d'invitation a usage unique. Seul l'admin de la base de donnees peut en creer.
+Manager signup is protected by a single-use invitation token system. Only the database admin can create them.
 
-**Via le SQL Editor de Supabase :**
+**Via the Supabase SQL Editor:**
 
 ```sql
--- Creer un token
+-- Create a token
 INSERT INTO public.manager_invites (token, company_name)
-VALUES ('MON-TOKEN-SECRET', 'Nom de l entreprise');
+VALUES ('MY-SECRET-TOKEN', 'Company Name');
 
--- Verifier les tokens existants
+-- Check existing tokens
 SELECT token, company_name, is_used, created_at
 FROM public.manager_invites
 ORDER BY created_at DESC;
 
--- Reinitialiser un token (si necessaire)
+-- Reset a token (if needed)
 UPDATE public.manager_invites
 SET is_used = false
-WHERE token = 'MON-TOKEN-SECRET';
+WHERE token = 'MY-SECRET-TOKEN';
 ```
 
-Le token est consomme automatiquement (`is_used = true`) lors de l'inscription. Si l'inscription echoue, le token est restaure.
+The token is automatically consumed (`is_used = true`) on signup. If signup fails, the token is restored.
 
-## Comment ca marche
+## How It Works
 
-1. **Upload** — Le manager depose un document PDF ou TXT
-2. **Orchestration** — 3 appels LLM generent Q&A, categories et agents (~10s)
-3. **Ingestion Copilot** — Le document est chunke, labellise par section et indexe (embeddings vectoriels)
-4. **Simulation** — L'apprenant repond vocalement, les agents reagissent avec emotion
-5. **Copilot** — L'apprenant peut poser des questions sur le document (RAG avec citations)
-6. **Rapport** — Analyse de competences avec lacunes et recommandations
-7. **Analytics Copilot** — Le manager voit les themes les plus interroges + les questions recentes
+1. **Upload** — The manager uploads a PDF or TXT document
+2. **Orchestration** — 3 LLM calls generate Q&A, categories and agents (~10s)
+3. **Copilot Ingestion** — The document is chunked, labeled by section and indexed (vector embeddings)
+4. **Simulation** — The learner answers vocally, agents react with emotion
+5. **Copilot** — The learner can ask questions about the document (RAG with citations)
+6. **Report** — Skills analysis with gaps and recommendations
+7. **Copilot Analytics** — The manager sees most-queried topics + recent questions
 
-### Machine a etats Q&A
+### Q&A State Machine
 
 ```
-ASKING ──(correct)──────────────────────► Q&A suivante
+ASKING ──(correct)──────────────────────► Next Q&A
    │
-   └──(incorrect)──► REPHRASING ──(correct)──► Q&A suivante
+   └──(incorrect)──► REPHRASING ──(correct)──► Next Q&A
                          │
-                         └──(incorrect)──► LEARNING (agent pedagogique)
+                         └──(incorrect)──► LEARNING (teaching agent)
                                               │
                                          (confirmation)
                                               │
-                                         RE_ASKING ──► Q&A suivante
+                                         RE_ASKING ──► Next Q&A
 ```
 
 ### Scoring
 
-Chaque categorie vaut 100 points :
+Each category is worth 100 points:
 
-| Tentative | Multiplicateur |
-|-----------|---------------|
-| 1ere reponse correcte | x1.0 |
-| Apres rephrasing | x0.6 |
-| Apres learning | x0.3 |
+| Attempt | Multiplier |
+|---------|------------|
+| 1st correct answer | x1.0 |
+| After rephrasing | x0.6 |
+| After learning | x0.3 |
 
 ## Scripts
 
 ```bash
-npm run dev    # Serveur de developpement
-npm run build  # Build de production
-npm run start  # Serveur de production
+npm run dev    # Development server
+npm run build  # Production build
+npm run start  # Production server
 npm run lint   # ESLint
 ```
 
@@ -139,6 +139,6 @@ npm run lint   # ESLint
 
 Mistral AI Worldwide Hackathon — Paris, Feb 28 – Mar 1, 2026 (Track 01 — AWS)
 
-## Licence
+## License
 
-Projet prive.
+MIT
