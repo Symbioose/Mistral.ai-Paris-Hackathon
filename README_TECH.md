@@ -1,4 +1,4 @@
-# YouGotIt — Documentation technique
+# YouGotIt — Technical Documentation
 
 ## Architecture
 
@@ -6,196 +6,229 @@
 app/
 ├── api/
 │   ├── auth/
-│   │   ├── login/            # POST — Authentification email/password
-│   │   ├── logout/           # POST — Deconnexion
-│   │   └── signup/           # POST — Inscription (token requis pour manager)
-│   ├── chat/                 # POST — SSE : machine a etats Q&A + evaluation
-│   ├── deepgram/             # GET — Cle temporaire Deepgram pour STT client
+│   │   ├── login/            # POST — Email/password authentication
+│   │   ├── logout/           # POST — Logout
+│   │   └── signup/           # POST — Signup (token required for manager)
+│   ├── chat/                 # POST — SSE: Q&A state machine + evaluation
+│   ├── copilot/[trainingId]/ # POST — Copilot RAG chat (vector search + LLM response)
+│   ├── deepgram/             # GET — Temporary Deepgram key for client-side STT
 │   ├── enrollments/[id]/
-│   │   └── save/             # POST — Sauvegarde progression (verrou optimiste)
-│   ├── orchestrate/          # POST — SSE : generation du game plan (3 appels LLM)
-│   ├── report/               # POST — Generation rapport de competences
+│   │   └── save/             # POST — Save progress (optimistic lock)
+│   ├── orchestrate/          # POST — SSE: game plan generation (3 LLM calls)
+│   ├── report/               # POST — Skills report generation
 │   ├── trainings/
-│   │   ├── create/           # POST — Creation formation + upload document
-│   │   ├── join/             # POST — Rejoindre formation par code (student)
+│   │   ├── create/           # POST — Create training + upload document
+│   │   ├── join/             # POST — Join training by code (student)
 │   │   └── [id]/
-│   │       ├── GET/DELETE    # Lecture/suppression formation
-│   │       ├── publish/      # POST — Publication + generation game plan
-│   │       └── enrollments/  # GET — Liste inscriptions (analytics manager)
-│   ├── tts/                  # POST — Synthese vocale ElevenLabs
-│   └── upload/               # POST — Extraction texte PDF/TXT
+│   │       ├── GET/DELETE    # Read/delete training
+│   │       ├── publish/      # POST — Publish + generate game plan
+│   │       ├── enrollments/  # GET — Enrollment list (manager analytics)
+│   │       └── copilot-analytics/ # GET — Topics + recent Copilot queries
+│   ├── tts/                  # POST — ElevenLabs text-to-speech
+│   └── upload/               # POST — PDF/TXT text extraction
 ├── components/
+│   ├── copilot/              # ChatPanel (RAG chat), DocumentViewer (PDF viewer)
 │   ├── dashboard/            # TrainingCard, EnrollmentCard, CreateTrainingModal,
-│   │                         # TrainingAnalyticsModal, EmptyState, DashboardLayout
-│   ├── ActiveAgentDisplay    # Agent actif avec badge emotion
-│   ├── AgentGenerationView   # Phase d'orchestration (graphe SVG anime)
-│   ├── AgentPanel            # Liste agents + journal d'evenements
-│   ├── DialogueBox           # Dialogue avec effet typewriter
-│   ├── EmotionIndicator      # Jauge emotion avec intensite et trajectoire
-│   ├── KnowledgeHeatmap      # Scores par categorie
-│   ├── MissionFeed           # Journal de mission temps reel
-│   ├── ObjectiveHUD          # Acte + score + progression
-│   ├── PushToTalk            # Bouton micro + preview transcript
-│   ├── SkillsReportDashboard # Rapport final (radar, matrice, recommandations)
-│   ├── ActTransitionOverlay  # Transition entre actes
-│   ├── SimulationEndOverlay  # Ecran fin de simulation
-│   ├── FileUpload            # Upload PDF/TXT avec drag-drop
-│   └── TextInput             # Saisie texte alternative
+│   │                         # TrainingAnalyticsModal (Learners/Copilot tabs),
+│   │                         # EmptyState, DashboardLayout
+│   ├── ActiveAgentDisplay    # Active agent with emotion badge
+│   ├── AgentGenerationView   # Orchestration phase (animated SVG graph)
+│   ├── AgentPanel            # Agent list + event log
+│   ├── DialogueBox           # Dialogue with typewriter effect
+│   ├── EmotionIndicator      # Emotion gauge with intensity and trajectory
+│   ├── KnowledgeHeatmap      # Scores by category
+│   ├── MissionFeed           # Real-time mission log
+│   ├── ObjectiveHUD          # Act + score + progress
+│   ├── PushToTalk            # Mic button + transcript preview
+│   ├── SkillsReportDashboard # Final report (radar, matrix, recommendations)
+│   ├── ActTransitionOverlay  # Act transition overlay
+│   ├── SimulationEndOverlay  # Simulation end screen
+│   ├── FileUpload            # PDF/TXT upload with drag-drop
+│   └── TextInput             # Alternative text input
 ├── hooks/
-│   └── useDeepgramSTT        # Hook STT via WebSocket Deepgram
+│   └── useDeepgramSTT        # STT hook via Deepgram WebSocket
 ├── lib/
 │   ├── agents/
-│   │   ├── openai-client     # Client OpenAI type avec retry (429/5xx)
-│   │   ├── prepare           # Pipeline 3 etapes : Q&A → categories → agents
-│   │   ├── orchestrator      # Generation SimulationSetup
-│   │   └── agent-factory     # Construction system prompts avec RAG
+│   │   ├── openai-client     # Typed OpenAI client with retry (429/5xx)
+│   │   ├── prepare           # 3-step pipeline: Q&A → categories → agents
+│   │   ├── orchestrator      # SimulationSetup generation
+│   │   └── agent-factory     # System prompt construction with RAG
 │   ├── game/
 │   │   └── state             # Init game state, scoring, switch agent
+│   ├── copilot/
+│   │   ├── chunking          # Document chunking + heading detection (regex)
+│   │   ├── embeddings        # OpenAI text-embedding-3-small embeddings
+│   │   ├── ingest            # Ingestion pipeline: chunk → label → embed → upsert
+│   │   └── labeling          # LLM thematic labeling (5-8 topic taxonomy)
 │   ├── supabase/
-│   │   ├── client            # Client navigateur (anon key)
-│   │   ├── server            # Client serveur (cookies)
-│   │   ├── admin             # Client service_role (bypass RLS)
-│   │   └── middleware        # Refresh session Next.js
+│   │   ├── client            # Browser client (anon key)
+│   │   ├── server            # Server client (cookies)
+│   │   ├── admin             # service_role client (bypass RLS)
+│   │   └── middleware        # Next.js session refresh
 │   ├── voice/
-│   │   └── voices            # VOICE_MAP + EMOTION_PARAMS ElevenLabs
-│   ├── emotion-engine        # Machine a etats emotion (deterministe, sans LLM)
-│   ├── rag                   # BM25 chunking + retrieval (zero dependance)
-│   ├── sfx                   # Effets sonores proceduraux (Web Audio API)
-│   ├── api-utils             # Helper reponse erreur securisee
-│   └── types                 # Types TypeScript centraux
+│   │   └── voices            # VOICE_MAP + EMOTION_PARAMS for ElevenLabs
+│   ├── emotion-engine        # Deterministic emotion state machine (no LLM)
+│   ├── rag                   # BM25 chunking + retrieval (zero dependencies)
+│   ├── sfx                   # Procedural sound effects (Web Audio API)
+│   ├── api-utils             # Secure error response helper
+│   └── types                 # Central TypeScript types
 ├── providers/
-│   └── AuthProvider          # Contexte auth (signUp, signIn, signOut, profile)
+│   └── AuthProvider          # Auth context (signUp, signIn, signOut, profile)
 ├── dashboard/
-│   ├── layout                # DashboardLayout (sidebar collapsible + auth guard)
-│   ├── manager/page          # Dashboard manager (formations, analytics)
-│   └── student/page          # Dashboard apprenant (inscriptions, progression)
+│   ├── layout                # DashboardLayout (collapsible sidebar + auth guard)
+│   ├── manager/page          # Manager dashboard (trainings, analytics)
+│   └── student/page          # Student dashboard (enrollments, progress)
 ├── auth/
 │   └── callback/             # OAuth callback handler
 ├── layout.tsx                # Root layout + AuthProvider
-└── page.tsx                  # Landing + simulation immersive
+└── page.tsx                  # Landing + immersive simulation
 ```
 
 ---
 
-## Base de donnees (Supabase)
+## Database (Supabase)
 
 ### Tables
 
-**profiles** *(auto-cree par trigger Supabase Auth)*
+**profiles** *(auto-created by Supabase Auth trigger)*
 
-| Colonne | Type | Description |
-|---------|------|-------------|
-| id | UUID PK | FK vers auth.users |
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID PK | FK to auth.users |
 | role | text | `manager` / `student` |
-| full_name | text | Nom complet |
-| avatar_url | text? | Avatar optionnel |
+| full_name | text | Full name |
+| avatar_url | text? | Optional avatar |
 
 **trainings**
 
-| Colonne | Type | Description |
-|---------|------|-------------|
+| Column | Type | Description |
+|--------|------|-------------|
 | id | UUID PK | |
-| manager_id | UUID FK | Proprietaire |
-| title | text | Titre de la formation |
+| manager_id | UUID FK | Owner |
+| title | text | Training title |
 | status | text | `draft` / `processing` / `published` |
-| document_text | text | Contenu brut du document |
-| document_filename | text | Nom du fichier original |
-| document_path | text? | Chemin storage Supabase |
-| game_plan | jsonb? | Plan de jeu genere par l'IA |
-| join_code | text unique | Code d'acces (auto-genere par trigger) |
-| max_students | int | Limite d'inscrits |
+| document_text | text | Raw document content |
+| document_filename | text | Original filename |
+| document_path | text? | Supabase storage path |
+| game_plan | jsonb? | AI-generated game plan |
+| join_code | text unique | Access code (auto-generated by trigger) |
+| max_students | int | Enrollment limit |
 
 **enrollments**
 
-| Colonne | Type | Description |
-|---------|------|-------------|
+| Column | Type | Description |
+|--------|------|-------------|
 | id | UUID PK | |
-| student_id | UUID FK | Apprenant |
-| training_id | UUID FK | Formation |
+| student_id | UUID FK | Learner |
+| training_id | UUID FK | Training |
 | status | text | `not_started` / `in_progress` / `completed` |
-| score | int? | Score actuel |
-| total_questions | int? | Nombre total de Q&A |
-| correct_answers | int? | Reponses correctes |
-| game_state | jsonb? | Etat de jeu serialise (pause/reprise) |
-| chat_history | jsonb? | Historique conversation |
-| version | int | Verrou optimiste |
-| last_played_at | timestamp? | Derniere activite |
+| score | int? | Current score |
+| total_questions | int? | Total Q&A count |
+| correct_answers | int? | Correct answers |
+| game_state | jsonb? | Serialized game state (pause/resume) |
+| chat_history | jsonb? | Conversation history |
+| version | int | Optimistic lock |
+| last_played_at | timestamp? | Last activity |
 
-**manager_invites** *(acces service_role uniquement — aucune politique RLS publique)*
+**document_chunks** *(vector chunks for Copilot RAG)*
 
-| Colonne | Type | Description |
-|---------|------|-------------|
+| Column | Type | Description |
+|--------|------|-------------|
 | id | UUID PK | |
-| token | text unique | Code d'invitation |
-| company_name | text? | Nom de l'entreprise |
-| is_used | boolean | Token consomme ? |
+| training_id | UUID FK | Associated training |
+| chunk_index | int | Chunk index in document |
+| content | text | Chunk text |
+| section_title | text? | Assigned topic/section (heading or LLM) |
+| embedding | vector(1536) | OpenAI text-embedding-3-small embedding |
+
+**copilot_queries** *(anonymous Copilot question log — manager analytics)*
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID PK | |
+| training_id | UUID FK | Associated training |
+| query_text | text | Question asked by learner |
+| section_title | text? | Top matching chunk topic (denormalized) |
+| chunk_ids | jsonb | Chunk indices used for the answer |
+| created_at | timestamptz | Query timestamp |
+
+**manager_invites** *(service_role access only — no public RLS policy)*
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID PK | |
+| token | text unique | Invitation code |
+| company_name | text? | Company name |
+| is_used | boolean | Token consumed? |
 
 ### RLS
 
-| Table | Politique |
-|-------|-----------|
-| profiles | Lecture propre profil |
-| trainings | Manager CRUD propres formations, student lecture published |
-| enrollments | Student RW propres inscriptions, manager lecture pour ses formations |
-| manager_invites | Aucune politique publique — service_role uniquement |
+| Table | Policy |
+|-------|--------|
+| profiles | Read own profile |
+| trainings | Manager CRUD own trainings, student read published |
+| enrollments | Student RW own enrollments, manager read for their trainings |
+| document_chunks | INSERT/SELECT for manager owner, SELECT for enrolled students |
+| copilot_queries | INSERT for enrolled students and manager owner, SELECT for manager owner |
+| manager_invites | No public policy — service_role only |
 
-### Clients Supabase
+### Supabase Clients
 
-| Fichier | Cle | Usage |
-|---------|-----|-------|
-| `supabase/client.ts` | anon key | Navigateur (AuthProvider) |
-| `supabase/server.ts` | anon key + cookies | API routes (contexte user) |
-| `supabase/admin.ts` | service_role key | Operations admin (bypass RLS) |
+| File | Key | Usage |
+|------|-----|-------|
+| `supabase/client.ts` | anon key | Browser (AuthProvider) |
+| `supabase/server.ts` | anon key + cookies | API routes (user context) |
+| `supabase/admin.ts` | service_role key | Admin operations (bypass RLS) |
 
 ---
 
-## Authentification
+## Authentication
 
-### Inscription Manager (avec token)
+### Manager Signup (with token)
 
 ```
 POST /api/auth/signup { email, password, fullName, role: "manager", inviteToken }
   │
-  ├── Valide email + password
-  ├── Verifie token dans manager_invites (admin client, bypass RLS)
-  │   └── token existe ET is_used = false ?
-  ├── Marque is_used = true
-  ├── supabase.auth.signUp() avec role dans metadata
-  │   └── Si echec → rollback is_used = false
-  └── Retourne { user }
+  ├── Validate email + password
+  ├── Verify token in manager_invites (admin client, bypass RLS)
+  │   └── token exists AND is_used = false?
+  ├── Mark is_used = true
+  ├── supabase.auth.signUp() with role in metadata
+  │   └── On failure → rollback is_used = false
+  └── Return { user }
 ```
 
-### Inscription Student (libre)
+### Student Signup (open)
 
 ```
 POST /api/auth/signup { email, password, fullName, role: "student" }
-  └── Pas de token requis
+  └── No token required
 ```
 
 ### Session
 
-`proxy.ts` (middleware Next.js) appelle `updateSession()` sur chaque requete pour rafraichir les cookies auth Supabase.
+`proxy.ts` (Next.js middleware) calls `updateSession()` on every request to refresh Supabase auth cookies.
 
 ---
 
-## Pipeline de generation (`prepareGamePlan`)
+## Generation Pipeline (`prepareGamePlan`)
 
-3 appels LLM sequentiels (`gpt-4.1-mini`) :
+3 sequential LLM calls (`gpt-4.1-mini`):
 
 **Step 1 — Q&A Generation** (temp 0.3)
-- Input : document text (max 100k chars)
-- Output : 5-25 `QAPair[]` avec `question`, `expected_answer`, `keywords`, `situation`, `source_excerpt`, `difficulty`
-- Regle : chaque Q&A doit citer un passage exact du document (zero hallucination)
+- Input: document text (max 100k chars)
+- Output: 5-25 `QAPair[]` with `question`, `expected_answer`, `keywords`, `situation`, `source_excerpt`, `difficulty`
+- Rule: each Q&A must cite an exact passage from the document (zero hallucination)
 
-**Step 2 — Categorisation** (temp 0.2)
-- Input : liste des Q&A
-- Output : 1-4 `QACategory[]` thematiques, progression pedagogique
+**Step 2 — Categorization** (temp 0.2)
+- Input: list of Q&A pairs
+- Output: 1-4 thematic `QACategory[]`, pedagogical progression
 
 **Step 3 — Agents + Scenario** (temp 0.4)
-- Output : 1 agent par categorie + 1 learning agent (`warm_female`) + scenario multi-actes
-- Voix assignees par personnalite (detection noms feminins)
+- Output: 1 agent per category + 1 learning agent (`warm_female`) + multi-act scenario
+- Voices assigned by personality (feminine name detection)
 
-Fallback hardcode si le pipeline echoue.
+Hardcoded fallback if the pipeline fails.
 
 ### SSE `/api/orchestrate`
 
@@ -205,57 +238,57 @@ status → status → ... → scenario → new_agent (×N) → evaluation_grid �
 
 ---
 
-## Machine a etats Q&A (`/api/chat`)
+## Q&A State Machine (`/api/chat`)
 
 ```
-ASKING ──── correct ──────────────────────► Q&A suivante / COMPLETE
+ASKING ──── correct ──────────────────────► Next Q&A / COMPLETE
    │
    └── incorrect (fail=0) → REPHRASING
               │
-         correct ──────────────────────────► Q&A suivante
+         correct ──────────────────────────► Next Q&A
               │
-         incorrect (fail=1) → LEARNING (agent pedagogique explique)
+         incorrect (fail=1) → LEARNING (teaching agent explains)
                     │
-               "compris" → RE_ASKING
+               "understood" → RE_ASKING
                     │
-               reponse ────────────────────► Q&A suivante
+               answer ─────────────────────► Next Q&A
 ```
 
 ### Scoring
 
-Chaque categorie vaut 100 points, repartis entre ses Q&A :
+Each category is worth 100 points, distributed among its Q&A pairs:
 
-| Tentative | Multiplicateur |
-|-----------|---------------|
-| 1ere reponse correcte | x1.0 |
-| Apres rephrasing | x0.6 |
-| Apres learning | x0.3 |
+| Attempt | Multiplier |
+|---------|------------|
+| 1st correct answer | x1.0 |
+| After rephrasing | x0.6 |
+| After learning | x0.3 |
 
-Penalites : -20% (1er echec), -30% (2eme), -15% (apres learning).
+Penalties: -20% (1st failure), -30% (2nd), -15% (after learning).
 
-Score total = moyenne ponderee des categories.
+Total score = weighted average of categories.
 
 ### SSE `/api/chat`
 
 ```
-meta (patch + emotion) → token (dialogue incremental) → done (etat final)
+meta (patch + emotion) → token (incremental dialogue) → done (final state)
 ```
 
 ---
 
-## Systeme vocal
+## Voice System
 
 ### TTS (ElevenLabs)
 
 | Voice type | Usage |
 |------------|-------|
-| `authoritative_male` | Agent senior/directeur |
-| `warm_female` | Learning agent / agent bienveillant |
-| `stressed_young` | Agent junior sous pression |
-| `gruff_veteran` | Agent terrain experimente |
-| `calm_narrator` | Didascalies (`*texte entre asterisques*`) |
+| `authoritative_male` | Senior/director agent |
+| `warm_female` | Learning agent / supportive agent |
+| `stressed_young` | Junior agent under pressure |
+| `gruff_veteran` | Experienced field agent |
+| `calm_narrator` | Stage directions (`*text between asterisks*`) |
 
-Parametres modules par emotion :
+Parameters modulated by emotion:
 
 | Emotion | stability | speed | style |
 |---------|-----------|-------|-------|
@@ -267,67 +300,109 @@ Parametres modules par emotion :
 
 ### STT (Deepgram)
 
-- Modele `nova-2`, langue `fr`, WebSocket streaming
-- Interim results (preview live) + resultats finaux
-- Detection activite vocale (VAD), silence 1.5s
-- Cle temporaire generee cote serveur (`/api/deepgram`)
-- Cross-browser : opus (Chrome/Firefox) ou aac (Safari)
+- Model `nova-2`, language `fr`, WebSocket streaming
+- Interim results (live preview) + final results
+- Voice activity detection (VAD), 1.5s silence
+- Temporary key generated server-side (`/api/deepgram`)
+- Cross-browser: opus (Chrome/Firefox) or aac (Safari)
 
 ---
 
-## Moteur d'emotions
+## Emotion Engine
 
-Machine a etats deterministe (sans LLM) dans `emotion-engine.ts` :
+Deterministic state machine (no LLM) in `emotion-engine.ts`:
 
-| Evenement | Emotion resultante | Intensite |
-|-----------|--------------------|-----------|
-| Bonne reponse (1er essai) | pleased | 0.4 ↓ |
-| Bonne reponse (apres echec) | relieved | 0.3 ↓ |
-| Mauvaise reponse (fail <= 1) | annoyed | +0.15 ↑ |
-| Mauvaise reponse (fail >= 2) | angry | max(0.7) ↑ |
+| Event | Resulting emotion | Intensity |
+|-------|-------------------|-----------|
+| Correct answer (1st try) | pleased | 0.4 ↓ |
+| Correct answer (after failure) | relieved | 0.3 ↓ |
+| Wrong answer (fail <= 1) | annoyed | +0.15 ↑ |
+| Wrong answer (fail >= 2) | angry | max(0.7) ↑ |
 | Hesitation (> 15s) | suspicious | +0.10 ↑ |
-| Fin apprentissage | neutral | 0.2 = |
+| End of learning | neutral | 0.2 = |
 
-L'emotion influence :
-- Le prompt agent (instruction de ton)
-- Les parametres TTS ElevenLabs
-- L'UI (badge emotion, couleurs)
+Emotion influences:
+- Agent prompt (tone instruction)
+- ElevenLabs TTS parameters
+- UI (emotion badge, colors)
 
-Decay naturel : intensite -0.1 par tour si cooling.
+Natural decay: intensity -0.1 per turn when cooling.
 
 ---
 
 ## RAG
 
-BM25 maison (zero dependance) dans `rag.ts` :
+Custom BM25 (zero dependencies) in `rag.ts`:
 
-- Chunking : 750 chars, overlap 120 chars
-- Tokenisation : lowercase + NFD + stop words francais
-- Scoring : BM25 (k1=1.2, b=0.75)
-- Top-K chunks injectes dans le system prompt de chaque agent
-- Garantit l'ancrage des reponses dans le document source
-
----
-
-## Securite
-
-- Headers de securite en production (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
-- CSP desactivee en dev (HMR Next.js)
-- RLS Supabase sur toutes les tables
-- Tokens manager a usage unique avec rollback si signup echoue
-- `SUPABASE_SERVICE_ROLE_KEY` jamais expose cote client (pas de prefixe `NEXT_PUBLIC_`)
-- Cle Deepgram temporaire (cle principale jamais au client)
-- Validation input TTS (1000 chars max, voice ID alphanumerique)
-- Verrou optimiste sur les sauvegardes d'enrollment (`version`)
-- Verification ownership sur tous les endpoints manager
-- `Cache-Control: no-store` sur toutes les routes API
+- Chunking: 750 chars, 120 chars overlap
+- Tokenization: lowercase + NFD + French stop words
+- Scoring: BM25 (k1=1.2, b=0.75)
+- Top-K chunks injected into each agent's system prompt
+- Ensures responses are grounded in the source document
 
 ---
 
-## Dependances
+## Copilot RAG (Vector)
 
-| Categorie | Package | Version |
-|-----------|---------|---------|
+Complementary pipeline to the BM25 above, using vector embeddings for the document Copilot.
+
+### Ingestion (on publish)
+
+```
+Document text
+  → chunkDocument(): 500 chars, overlap 100, regex heading detection
+  → labelChunksWithLLM(): if < 50% chunks have a heading → LLM taxonomy (5-8 topics)
+  → generateEmbeddings(): OpenAI text-embedding-3-small, batches of 100
+  → Upsert document_chunks (content, section_title, embedding)
+```
+
+Heading detection: markdown (`#`), numbered (`1.`), ALL CAPS, Roman numerals, short lines (< 60 chars).
+
+LLM labeling: a single `gpt-4.1-mini` call (JSON mode) that extracts 5-8 global topics then assigns each chunk to exactly one topic. Avoids variants (`Refund` vs `Refunds`).
+
+### Copilot Chat (`/api/copilot/[trainingId]`)
+
+```
+Learner question
+  → Embed the question (text-embedding-3-small)
+  → match_chunks RPC: cosine similarity top-5 (pgvector)
+  → System prompt with chunks + citation instructions
+  → Streaming LLM (gpt-4.1-mini) with "Source N" references
+  → after(): anonymous log to copilot_queries (denormalized section_title)
+```
+
+Logging uses `after()` (Next.js) with `createAdminClient()` for serverless-safe fire-and-forget.
+
+### Copilot Analytics (`/api/trainings/[id]/copilot-analytics`)
+
+Server-side JS aggregation of `copilot_queries` by `section_title`. Returns:
+- Most-queried topics ranking (with percentage)
+- Total query count
+- 20 most recent questions (anonymized, with section and date)
+
+Accessible in the manager dashboard via the "Copilot" tab in the analytics modal.
+
+---
+
+## Security
+
+- Security headers in production (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
+- CSP disabled in dev (Next.js HMR)
+- Supabase RLS on all tables
+- Single-use manager tokens with rollback on signup failure
+- `SUPABASE_SERVICE_ROLE_KEY` never exposed client-side (no `NEXT_PUBLIC_` prefix)
+- Temporary Deepgram key (main key never sent to client)
+- TTS input validation (1000 chars max, alphanumeric voice ID)
+- Optimistic lock on enrollment saves (`version`)
+- Ownership verification on all manager endpoints
+- `Cache-Control: no-store` on all API routes
+
+---
+
+## Dependencies
+
+| Category | Package | Version |
+|----------|---------|---------|
 | Framework | next | 16.1.6 |
 | | react / react-dom | 19.2.3 |
 | Database | @supabase/supabase-js | 2.99.1 |
@@ -345,7 +420,7 @@ BM25 maison (zero dependance) dans `rag.ts` :
 
 ## Configuration
 
-- **React Compiler** active (`next.config.ts`)
+- **React Compiler** enabled (`next.config.ts`)
 - **Tailwind CSS 4** zero-config via PostCSS
 - **TypeScript** strict mode, target ES2017, path alias `@/*`
 - **ESLint** flat config, extends `eslint-config-next`
