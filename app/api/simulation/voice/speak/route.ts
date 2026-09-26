@@ -1,3 +1,4 @@
+import { isSameOrigin } from "@/app/lib/simulation/http";
 import { createClient } from "@/app/lib/supabase/server";
 
 // Fallback TTS used when Gradium is not configured: streams raw PCM16 mono 24 kHz,
@@ -5,8 +6,7 @@ import { createClient } from "@/app/lib/supabase/server";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  if (!isSameOrigin(request))
     return Response.json({ error: "Origine refusée" }, { status: 403 });
   const supabase = await createClient();
   const {

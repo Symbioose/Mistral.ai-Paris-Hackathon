@@ -6,13 +6,20 @@ export class HttpError extends Error {
     super(message);
   }
 }
-export function checkOrigin(req: Request) {
+/** Same-origin check against the host the browser actually called (req.url may say "localhost" in dev or behind a proxy). */
+export function isSameOrigin(req: Request) {
+  if (req.headers.get("sec-fetch-site") === "cross-site") return false;
   const origin = req.headers.get("origin");
-  if (
-    (origin && origin !== new URL(req.url).origin) ||
-    req.headers.get("sec-fetch-site") === "cross-site"
-  )
-    throw new HttpError(403, "Origine refusée");
+  if (!origin) return true;
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  try {
+    return new URL(origin).host === (host || new URL(req.url).host);
+  } catch {
+    return false;
+  }
+}
+export function checkOrigin(req: Request) {
+  if (!isSameOrigin(req)) throw new HttpError(403, "Origine refusée");
 }
 export async function body(req: Request): Promise<Record<string, unknown>> {
   checkOrigin(req);

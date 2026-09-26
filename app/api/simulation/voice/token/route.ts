@@ -1,3 +1,4 @@
+import { isSameOrigin } from "@/app/lib/simulation/http";
 import { createClient } from "@/app/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -17,8 +18,7 @@ export function GET() {
 }
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  if (!isSameOrigin(request))
     return NextResponse.json({ error: "Origine refusée" }, { status: 403 });
   const supabase = await createClient();
   const {
