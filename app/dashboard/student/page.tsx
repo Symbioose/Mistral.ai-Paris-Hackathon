@@ -71,7 +71,7 @@ export default function StudentDashboard() {
   };
 
   const handlePlay = (enrollment: Enrollment) => {
-    router.push(`/?training=${enrollment.trainings.id}&enrollment=${enrollment.id}`);
+    router.push("/simulation");
   };
 
   const handleCopilot = (enrollment: Enrollment) => {

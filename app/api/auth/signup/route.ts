@@ -1,11 +1,16 @@
+import {body} from '@/app/lib/simulation/http';
+import {failure} from '@/app/lib/simulation/server';
 import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const { email, password, fullName, role, inviteToken } = await request.json();
+  let values:Record<string,unknown>;
+  try{values=await body(request);}catch(e){return failure(e);}
+  const {email,password,fullName,role,inviteToken}=values;
+  let claimedInviteId:string|undefined;
 
-  if (!email || !password || !fullName) {
+  if (typeof email!=='string'||typeof password!=='string'||typeof fullName!=='string'||!email||!password||!fullName) {
     return NextResponse.json({ error: "Email, mot de passe et nom complet requis" }, { status: 400 });
   }
 
@@ -23,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Le mot de passe doit contenir au moins une lettre et un chiffre" }, { status: 400 });
   }
 
-  if (role && !["manager", "student"].includes(role)) {
+  if (role!==undefined && (typeof role!=="string"||!["manager", "student"].includes(role))) {
     return NextResponse.json({ error: "Rôle invalide" }, { status: 400 });
   }
 
@@ -50,15 +55,16 @@ export async function POST(request: Request) {
     }
 
     // Mark the token as used
-    const { error: updateError } = await adminDb
+    const { data: claimed, error: updateError } = await adminDb
       .from("manager_invites")
       .update({ is_used: true })
-      .eq("id", invite.id);
+      .eq("id", invite.id).eq("is_used", false).select("id").maybeSingle();
 
-    if (updateError) {
-      console.error("[signup] Failed to mark invite as used:", updateError.message);
+    if (updateError || !claimed) {
+      console.error("[signup] Failed to mark invite as used:", updateError?.message||"Invite already claimed");
       return NextResponse.json({ error: "Erreur interne, veuillez réessayer" }, { status: 500 });
     }
+    claimedInviteId=claimed.id;
   }
 
   const supabase = await createClient();
@@ -69,22 +75,31 @@ export async function POST(request: Request) {
     options: {
       data: {
         full_name: fullName,
-        role: role || "student",
+
       },
     },
   });
 
   if (error) {
     // If signup fails after marking token as used, revert the token
-    if (role === "manager" && inviteToken) {
+    if (claimedInviteId) {
       const adminDb = createAdminClient();
       await adminDb
         .from("manager_invites")
         .update({ is_used: false })
-        .eq("token", inviteToken.trim());
+        .eq("id", claimedInviteId);
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
+  if(role==='manager'){
+    // Obfuscated duplicate signups must never promote an existing account.
+    if(!data.user||!data.user.identities?.length)return NextResponse.json({error:'Compte déjà existant ou inscription non confirmée. Connectez-vous avec votre compte.'},{status:409});
+    const adminDb=createAdminClient();
+    const {error:trustedError}=await adminDb.auth.admin.updateUserById(data.user.id,{app_metadata:{role:'manager'}});
+    if(trustedError)return NextResponse.json({error:'Compte créé, mais activation administrateur indisponible. Contactez votre formateur.'},{status:503});
+    const {error:profileError}=await adminDb.from('profiles').update({role:'manager'}).eq('id',data.user.id);
+    if(profileError)return NextResponse.json({error:'Compte créé, mais profil administrateur indisponible.'},{status:503});
+  }
   return NextResponse.json({ user: data.user });
 }

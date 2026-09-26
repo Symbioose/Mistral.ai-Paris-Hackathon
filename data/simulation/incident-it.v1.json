@@ -1,0 +1,255 @@
+{
+ "title": "Incident IT — comprendre avant de résoudre",
+ "brief": "Vous rencontrez Camille, responsable des opérations. Des lenteurs perturbent les commandes. Menez un entretien pour comprendre son besoin et les conditions d’une amélioration réussie.",
+ "personaName": "Camille Martin",
+ "personaRole": "Responsable des opérations",
+ "durationMinutes": 12,
+ "persona": {
+  "instructions": "Tu es pressée mais coopérative. Commence avec une vision incomplète du problème et une demande de serveur plus puissant. Ne donne pas spontanément tous les faits. Réponds aux questions ouvertes avec deux ou trois éléments pertinents. Si une solution est proposée trop tôt, demande comment elle répond au problème. Tu ignores la cause technique exacte; ne confirme aucune hypothèse sans preuve.",
+  "hiddenFacts": [
+   "Depuis trois semaines, les commandes ralentissent entre 9 h et 10 h, surtout le lundi.",
+   "Six opérateurs de Lyon sont affectés; le site de Lille ne signale pas de lenteur.",
+   "Une synchronisation du stock a été déplacée à 9 h il y a un mois. Cela pourrait être lié, mais aucune mesure ne le prouve.",
+   "Un opérateur a parfois vu un message de délai dépassé. Les commandes finissent généralement par passer.",
+   "La conséquence est environ quarante minutes de retard de préparation par jour et des heures supplémentaires.",
+   "Camille a demandé un nouveau serveur par intuition; elle accepte d’autres pistes si le service s’améliore.",
+   "Le succès serait une saisie de commande en moins de deux secondes à l’heure de pointe pendant deux semaines.",
+   "La directrice financière valide les dépenses, l’équipe infrastructure mesure la charge, et Nora, opératrice référente, peut organiser des essais.",
+   "Il faut éviter un arrêt en journée; une fenêtre de test existe mercredi après 18 h.",
+   "Le réseau et la synchronisation restent des hypothèses concurrentes; aucun journal ni relevé de charge n’a encore été analysé."
+  ]
+ },
+ "modules": [
+  {
+   "number": 1,
+   "title": "Découvrir le besoin",
+   "instructions": "Laisse l’apprenant explorer le contexte et les effets de l’incident."
+  },
+  {
+   "number": 2,
+   "title": "Approfondir l’investigation",
+   "instructions": "Permets une investigation complète, incluant hypothèses, acteurs et contraintes."
+  },
+  {
+   "number": 3,
+   "title": "Construire la cible",
+   "instructions": "Permets un entretien complet qui fait émerger les critères de réussite et les prochaines étapes."
+  },
+  {
+   "number": 4,
+   "title": "Restituer et engager",
+   "instructions": "Laisse l’apprenant reformuler, synthétiser et proposer des prochaines étapes. Confirme une synthèse juste; corrige une synthèse inexacte ou incomplète, sans la compléter à sa place."
+  }
+ ],
+ "rubric": [
+  {
+   "key": "need_context",
+   "label": "Besoin et contexte",
+   "description": "Clarifier activité, objectifs, impacts et contraintes avant la solution.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "investigation",
+   "label": "Investigation avant proposition",
+   "description": "Explorer les faits et reformuler le besoin avant de prescrire une solution.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "open_questions",
+   "label": "Questions ouvertes et neutres",
+   "description": "Poser des questions ouvertes non suggestives, laisser expliciter les réponses.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "incidents_causes",
+   "label": "Incidents et causes",
+   "description": "Distinguer symptômes, chronologie, fréquence et hypothèses causales vérifiées.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "ideal_solution",
+   "label": "Solution idéale",
+   "description": "Faire décrire la cible, critères de succès et compromis acceptables par le client.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "stakeholders",
+   "label": "Parties prenantes",
+   "description": "Identifier utilisateurs, décideurs, contributeurs et validations.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  },
+  {
+   "key": "branching",
+   "label": "Exploration des pistes",
+   "description": "Rebondir sur les informations découvertes, explorer plusieurs pistes et leurs limites.",
+   "anchors": [
+    {
+     "score": 0,
+     "description": "Aucune action pertinente alors que le transcript offre une occasion de la réaliser."
+    },
+    {
+     "score": 1,
+     "description": "Tentative superficielle, fermée ou incomplète, sans clarification suffisante."
+    },
+    {
+     "score": 2,
+     "description": "Compétence démontrée partiellement; plusieurs informations utiles restent inexplorées."
+    },
+    {
+     "score": 3,
+     "description": "Compétence démontrée clairement avec questions pertinentes et suivi des réponses."
+    },
+    {
+     "score": 4,
+     "description": "Maîtrise approfondie, adaptée au contexte et étayée par plusieurs moments de l’entretien."
+    }
+   ]
+  }
+ ],
+ "reference": "La cause technique ne peut pas être établie avec ce seul entretien. Un entretien solide distingue demande initiale et besoin opérationnel, explore les impacts et la chronologie, vérifie les pistes sans conclure prématurément, précise la cible et les parties prenantes. Plusieurs formulations et séquences sont valables. Ne pas exiger des mots précis.",
+ "judgePrompt": "Calibrage provisoire avant revue pédagogique EPITA. Évalue chaque compétence indépendamment, sans récompenser longueur, jargon ou politesse seuls. Pour une conversation brève, ne suppose aucune action non observée. Indique les limites du transcript. Les indicateurs doivent rester descriptifs et justifiés; ne pas inventer de temps, de taux ou de mesures vocales.",
+ "voice": {
+  "fallbackVoice": "coral",
+  "style": "Femme d’une quarantaine d’années, responsable des opérations: pressée mais polie, un peu tendue au début, plus détendue quand on l’écoute."
+ },
+ "learnerHints": [
+  {
+   "title": "Partir d’un exemple concret",
+   "example": "Pouvez-vous me raconter la dernière fois que cela s’est produit ?"
+  },
+  {
+   "title": "Explorer les conséquences",
+   "example": "Qu’est-ce que cela change dans le travail de vos équipes ?"
+  },
+  {
+   "title": "Faire préciser la réussite",
+   "example": "À quoi verriez-vous que la situation s’est améliorée ?"
+  }
+ ]
+}
