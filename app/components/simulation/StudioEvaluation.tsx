@@ -59,8 +59,9 @@ export default function StudioEvaluation({
     }
   };
   return (
-    <section className="yg-paper">
-      <h2>Vérifier la cohérence de l’évaluation</h2>
+    <section className="yg-panel">
+      <p className="yg-kicker">04 · Tester l’évaluation</p>
+      <h2 className="yg-h3">Vérifier la cohérence du juge avant de publier</h2>
       <p>
         Testez le brouillon sur un entretien de référence avant de le publier.
         Chaque essai appelle le juge une fois ; le harnais en ligne de commande
@@ -81,20 +82,21 @@ export default function StudioEvaluation({
         </select>
       </label>
       <button
-        className="yg-button yg-button-soft"
+        className="yg-btn yg-btn--ghost"
         disabled={busy || !fixtures.length}
         onClick={run}
       >
         {busy ? "Évaluation du transcript…" : "Tester ce brouillon"}
       </button>
       {error && (
-        <p role="alert" className="yg-error">
+        <p role="alert" className="yg-alert">
           {error}
         </p>
       )}
       {result && (
         <div role="status">
-          <h3>
+          <h3 className="yg-verdict">
+            <span className={`yg-dot ${result.passed ? "yg-dot--ok" : ""}`} />
             {result.passed === null
               ? "Résultat exploratoire"
               : result.passed
@@ -110,7 +112,7 @@ export default function StudioEvaluation({
             </p>
           ) : (
             <div className="yg-table-scroll">
-              <table className="yg-audit-table">
+              <table className="yg-table">
                 <thead>
                   <tr>
                     <th>Compétence</th>

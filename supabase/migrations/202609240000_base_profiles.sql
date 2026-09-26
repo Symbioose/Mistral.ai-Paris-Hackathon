@@ -14,9 +14,11 @@ do $$ begin
  end if;
 end $$;
 create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$
+declare trusted_role public.profiles.role%type;
 begin
+ trusted_role := case when new.raw_app_meta_data->>'role'='manager' then 'manager' else 'student' end;
  insert into public.profiles(id,role,full_name)
- values (new.id, case when new.raw_app_meta_data->>'role'='manager' then 'manager' else 'student' end, new.raw_user_meta_data->>'full_name')
+ values (new.id, trusted_role, new.raw_user_meta_data->>'full_name')
  on conflict (id) do nothing;
  return new;
 end; $$;

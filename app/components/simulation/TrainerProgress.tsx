@@ -1,16 +1,45 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Session } from "@/app/lib/conversation/types";
+import {
+  api,
+  type Session,
+  type HistoryPage,
+} from "@/app/lib/conversation/types";
+import { Progress } from "./Workspace";
 export default function TrainerProgress() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [cursor, setCursor] = useState<HistoryPage["nextCursor"]>(null);
+  const [search, setSearch] = useState("");
+  const loadMore = async () => {
+    if (!cursor) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api<HistoryPage>(
+        `/api/simulation/sessions?scope=cohort&${new URLSearchParams(cursor)}`,
+      );
+      setSessions((old) => [
+        ...old,
+        ...data.sessions.filter((s) => !old.some((o) => o.id === s.id)),
+      ]);
+      setCursor(data.nextCursor);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chargement impossible.");
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     let alive = true;
-    api<{ sessions: Session[] }>("/api/simulation/sessions?scope=cohort")
+    api<HistoryPage>("/api/simulation/sessions?scope=cohort")
       .then((data) => {
-        if (alive) setSessions(data.sessions);
+        if (alive) {
+          setSessions(data.sessions);
+          setCursor(data.nextCursor);
+        }
       })
       .catch((e) => {
         if (alive) setError(e.message);
@@ -23,20 +52,33 @@ export default function TrainerProgress() {
     };
   }, []);
   const learners = new Map<string, Session[]>();
-  for (const session of sessions) {
+  for (const session of sessions.filter((s) =>
+    (s.learnerName || "Apprenant")
+      .toLocaleLowerCase("fr")
+      .includes(search.toLocaleLowerCase("fr")),
+  )) {
     const key = session.learnerId || "unknown";
     learners.set(key, [...(learners.get(key) || []), session]);
   }
   return (
-    <section className="yg-paper">
-      <h2>Suivre les entretiens</h2>
+    <section className="yg-panel">
+      <h2 className="yg-h3">Suivre les entretiens</h2>
       <p>
         Sessions sur vos scénarios, regroupées par apprenant. Comparez les
         compétences à scénario, rubrique et modèle de notation identiques.
       </p>
+      <label className="yg-field">
+        Rechercher un apprenant
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Nom de l’apprenant"
+        />
+      </label>
       {loading && <p role="status">Chargement des parcours…</p>}
       {error && (
-        <p role="alert" className="yg-error">
+        <p role="alert" className="yg-alert">
           {error}
         </p>
       )}
@@ -44,10 +86,15 @@ export default function TrainerProgress() {
         <p>Les premiers entretiens apparaîtront ici.</p>
       )}
       {Array.from(learners, ([id, items]) => (
-        <section key={id}>
-          <h3>{items[0].learnerName || "Apprenant"}</h3>
+        <section key={id} className="yg-learner">
+          <div className="yg-learner-head">
+            <span className="yg-avatar-chip">{(items[0].learnerName || "A").slice(0, 1)}</span>
+            <h3 className="yg-h3">{items[0].learnerName || "Apprenant"}</h3>
+            <span className="yg-small">{items.length} entretien{items.length > 1 ? "s" : ""}</span>
+          </div>
+          <Progress sessions={items} trainer />
           <div className="yg-table-scroll">
-            <table className="yg-audit-table">
+            <table className="yg-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -84,10 +131,14 @@ export default function TrainerProgress() {
           </div>
         </section>
       ))}
-      {sessions.length >= 200 && (
-        <p className="yg-small">
-          Les 200 sessions les plus récentes sont affichées.
-        </p>
+      {cursor && (
+        <button
+          className="yg-btn yg-btn--ghost"
+          disabled={loading}
+          onClick={loadMore}
+        >
+          Charger les entretiens précédents
+        </button>
       )}
     </section>
   );

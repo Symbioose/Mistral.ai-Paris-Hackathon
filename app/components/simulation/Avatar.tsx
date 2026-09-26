@@ -153,14 +153,13 @@ export default function Avatar({
         aria-label="Votre interlocuteur virtuel"
       />
       {!loaded && (
-        <div className="yg-avatar-loading">
-          <div className="yg-orbit" />
-          <p>
-            {failed
-              ? "Connexion visuelle indisponible"
-              : "Votre interlocuteur se prépare"}
-          </p>
-          <small>{!failed && `${progress} %`}</small>
+        <div className="yg-avatar-loading" role="status">
+          <span>{failed ? "Image indisponible · l’entretien reste possible" : "La salle se prépare"}</span>
+          {!failed && (
+            <span className="yg-avatar-progress" aria-hidden="true">
+              <i style={{ width: `${Math.max(4, progress)}%` }} />
+            </span>
+          )}
         </div>
       )}
     </div>

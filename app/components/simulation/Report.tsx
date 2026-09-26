@@ -7,15 +7,10 @@ import type {
   Turn,
 } from "@/app/lib/conversation/types";
 import type { QuestionKind } from "@/app/lib/simulation/contracts";
+import { Arrow } from "./Chrome";
 
 // Scores are 0–4. Words first: the learner reads a level, not a grade.
-const LEVELS = [
-  "À découvrir",
-  "Premiers pas",
-  "En progrès",
-  "Solide",
-  "Maîtrisé",
-];
+const LEVELS = ["À découvrir", "Premiers pas", "En progrès", "Solide", "Maîtrisé"];
 const KINDS: Record<QuestionKind, { label: string; hint: string }> = {
   open: { label: "Ouverte", hint: "laisse le client raconter" },
   closed: { label: "Fermée", hint: "oui/non ou choix" },
@@ -41,51 +36,70 @@ export default function Report({
   const [selected, setSelected] = useState<string | null>(null);
   useDialog(selected !== null, () => setSelected(null));
   const turn = turns.find((t) => t.id === selected);
+  const index = turn ? turns.indexOf(turn) : -1;
   const discovered = report.discovery?.filter((d) => d.discovered).length ?? 0;
+  const total = report.discovery?.length ?? 0;
+  const who = scenario.personaName.split(" ")[0];
+  const learnerTurns = turns.filter((t) => t.role === "user").length;
   return (
-    <main className="yg-report yg-enter">
-      <div className="yg-eyebrow">
-        VOTRE RETOUR · {scenario.title.toUpperCase()}
-        {moduleNumber ? ` · MODULE ${moduleNumber}` : ""}
-      </div>
-      <h1>
-        Chaque échange
-        <br />
-        <em>vous fait avancer.</em>
-      </h1>
-      <p className="yg-lead">{report.summary}</p>
+    <main className="yg-page">
+      <header className="yg-report-head">
+        <div className="yg-reveal">
+          <p className="yg-kicker">
+            Retour d’entretien · <b>{scenario.title}</b>
+            {moduleNumber ? ` · Module ${moduleNumber}` : ""}
+          </p>
+          <h1 className="yg-title" style={{ marginTop: 16 }}>
+            Voici ce que votre entretien <em>a fait émerger.</em>
+          </h1>
+          <p className="yg-lead">{report.summary}</p>
+        </div>
+        {report.discovery && (
+          <aside className="yg-score-seal yg-reveal" aria-label="Besoin découvert">
+            <span className="yg-kicker">Besoin découvert</span>
+            <strong>
+              {discovered}
+              <small> / {total}</small>
+            </strong>
+            <div className="yg-bars" style={{ "--n": total } as React.CSSProperties} aria-hidden="true">
+              {report.discovery.map((d) => (
+                <i key={d.fact} className={d.discovered ? "on" : ""} />
+              ))}
+            </div>
+            <p className="yg-small">
+              dimensions du besoin de {who} mises au jour en {learnerTurns} intervention
+              {learnerTurns > 1 ? "s" : ""}.
+            </p>
+          </aside>
+        )}
+      </header>
 
       {report.bestMoment && (
-        <button
-          className="yg-best"
-          onClick={() => setSelected(report.bestMoment!.turnId)}
-        >
-          <span className="yg-kicker">VOTRE MEILLEUR MOMENT</span>
+        <button className="yg-best yg-reveal" onClick={() => setSelected(report.bestMoment!.turnId)}>
+          <span className="yg-kicker">Votre meilleur moment</span>
           <q>{report.bestMoment.quote}</q>
           <p>{report.bestMoment.why}</p>
-          <small>Revoir ce moment ↗</small>
+          <small>Revoir ce moment dans l’entretien →</small>
         </button>
       )}
 
       {report.discovery && (
-        <section className="yg-discovery">
-          <div className="yg-section-title">
-            <h2>Ce que vous avez fait émerger</h2>
-            <span>
-              {discovered} dimension{discovered > 1 ? "s" : ""} sur{" "}
-              {report.discovery.length} du besoin de{" "}
-              {scenario.personaName.split(" ")[0]}
-            </span>
+        <section className="yg-section">
+          <div className="yg-section-head">
+            <h2>La carte du besoin</h2>
+            <span>Cliquez une dimension pour retrouver la question</span>
           </div>
-          <NeedMap
-            discovery={report.discovery}
-            center={`Le besoin de ${scenario.personaName.split(" ")[0]}`}
-            onSelect={setSelected}
-          />
-          <p className="yg-small yg-center">
-            Les dimensions en pointillés sont restées dans l’ombre : c’est là
-            que se cachent vos prochaines questions.
-          </p>
+          <div className="yg-map-wrap">
+            <NeedMap discovery={report.discovery} center={`Le besoin de ${who}`} onSelect={setSelected} />
+            <div className="yg-map-legend">
+              <div><i /> Mis au jour par vos questions</div>
+              <div><i className="off" /> Resté dans l’ombre</div>
+              <p className="yg-small">
+                Les dimensions en pointillés n’ont pas été abordées. C’est là que se trouvent vos
+                prochaines questions.
+              </p>
+            </div>
+          </div>
         </section>
       )}
 
@@ -93,131 +107,132 @@ export default function Report({
         <QuestionStrip questions={report.questions} onSelect={setSelected} />
       )}
 
-      <div className="yg-report-intro">
-        <section className="yg-paper">
-          <span className="yg-kicker">À CONSERVER</span>
-          <h2>Vos points d’appui</h2>
-          {report.strengths.map((s, i) => (
-            <p key={i} className="yg-check">
-              {s}
-            </p>
-          ))}
-        </section>
-        <section className="yg-paper yg-paper-tint">
-          <span className="yg-kicker">POUR LE PROCHAIN ENTRETIEN</span>
-          <h2>Un pas de plus</h2>
-          {report.priorities.map((s, i) => (
-            <p key={i}>
-              <span className="yg-number">0{i + 1}</span>
-              {s}
-            </p>
-          ))}
-        </section>
-      </div>
+      <section className="yg-section yg-columns">
+        <div>
+          <div className="yg-section-head">
+            <h2>Vos points d’appui</h2>
+            <span>À garder</span>
+          </div>
+          <ol className="yg-list">
+            {report.strengths.map((s, i) => (
+              <li key={i}>
+                <span>✓</span>
+                {s}
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div>
+          <div className="yg-section-head">
+            <h2>Au prochain entretien</h2>
+            <span>À essayer</span>
+          </div>
+          <ol className="yg-list yg-list--signal">
+            {report.priorities.map((s, i) => (
+              <li key={i}>
+                <span>{String(i + 1).padStart(2, "0")}</span>
+                {s}
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
 
-      <div className="yg-section-title">
-        <h2>Votre démarche, compétence par compétence</h2>
-        <span>Chaque niveau s’appuie sur vos propres mots.</span>
-      </div>
-      <div className="yg-skill-list">
-        {report.skills.map((skill) => (
-          <details className="yg-skill" key={skill.key}>
-            <summary>
-              <span>{skill.label}</span>
-              <Level score={skill.score} />
-              <span className="yg-expand">+</span>
-            </summary>
-            <div className="yg-skill-body">
-              <p>{skill.reason}</p>
-              {skill.evidence.map((e, i) => (
-                <button
-                  className="yg-quote"
-                  key={i}
-                  onClick={() => setSelected(e.turnId)}
-                >
-                  « {e.quote} »<small>Retrouver dans l’entretien ↗</small>
-                </button>
-              ))}
-              {skill.missing.length > 0 && (
-                <>
-                  <h3>Ce qui reste à explorer</h3>
-                  <ul>
-                    {skill.missing.map((m, i) => (
-                      <li key={i}>{m}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <div className="yg-advice">
-                <strong>À essayer</strong>
-                <p>{skill.advice}</p>
+      <section className="yg-section">
+        <div className="yg-section-head">
+          <h2>Compétence par compétence</h2>
+          <span>Chaque niveau s’appuie sur vos propres mots</span>
+        </div>
+        <div className="yg-skills">
+          {report.skills.map((skill) => (
+            <details className="yg-skill" key={skill.key}>
+              <summary>
+                <span>{skill.label}</span>
+                <Gauge score={skill.score} />
+                <span className={`yg-level ${skill.score === null ? "is-none" : ""}`}>
+                  {skill.score === null ? "Non observé" : LEVELS[skill.score]}
+                </span>
+                <span className="yg-plus" aria-hidden="true">+</span>
+              </summary>
+              <div className="yg-skill-body">
+                <p>{skill.reason}</p>
+                <div className="yg-evidence">
+                  {skill.evidence.map((e, i) => (
+                    <button className="yg-quote" key={i} onClick={() => setSelected(e.turnId)}>
+                      « {e.quote} »<small>Retrouver dans l’entretien</small>
+                    </button>
+                  ))}
+                  {skill.missing.length > 0 && (
+                    <>
+                      <p className="yg-kicker" style={{ marginTop: 8 }}>Reste à explorer</p>
+                      <ul className="yg-missing">
+                        {skill.missing.map((m, i) => (
+                          <li key={i}>{m}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+                <div className="yg-advice">
+                  <strong>À essayer</strong>
+                  <p>{skill.advice}</p>
+                </div>
               </div>
-            </div>
-          </details>
-        ))}
-      </div>
+            </details>
+          ))}
+        </div>
+      </section>
 
       {report.indicators.length > 0 && (
-        <div className="yg-indicators">
-          {report.indicators.map((i, index) => (
-            <article className="yg-paper" key={index}>
-              <span className="yg-kicker">{i.label}</span>
-              <strong>{i.value}</strong>
-              <p>{i.explanation}</p>
-            </article>
-          ))}
-        </div>
+        <section className="yg-section">
+          <div className="yg-section-head">
+            <h2>Indicateurs</h2>
+            <span>Descriptifs, tirés du transcript</span>
+          </div>
+          <div className="yg-indicators">
+            {report.indicators.map((i, n) => (
+              <article className="yg-indicator" key={n}>
+                <span className="yg-kicker">{i.label}</span>
+                <strong>{i.value}</strong>
+                <p>{i.explanation}</p>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
-      <div className="yg-report-footer">
+      <section className="yg-again">
         <div>
-          <h2>On essaie autrement ?</h2>
-          <p>
-            Choisissez une piste ci-dessus et testez-la dans un nouvel
-            entretien. C’est en recommençant que l’aisance vient.
-          </p>
+          <h2 className="yg-title">On essaie autrement&nbsp;?</h2>
+          <p>Choisissez une piste ci-dessus et testez-la tout de suite. L’aisance vient en recommençant.</p>
         </div>
-        <button className="yg-button" onClick={onAgain}>
-          Nouvelle tentative <span>↗</span>
-        </button>
-        <button className="yg-link" onClick={onBack}>
-          Voir ma progression
-        </button>
-      </div>
+        <div className="yg-again-actions">
+          <button className="yg-btn yg-btn--signal yg-btn--lg" onClick={onAgain}>
+            Nouvelle tentative <Arrow />
+          </button>
+          <button className="yg-btn yg-btn--ghost yg-btn--lg" onClick={onBack}>
+            Ma progression
+          </button>
+        </div>
+      </section>
 
       {turn && (
         <div className="yg-modal-backdrop" onClick={() => setSelected(null)}>
-          <section
-            className="yg-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Extrait de la conversation"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="yg-close"
-              autoFocus
-              onClick={() => setSelected(null)}
-            >
-              Fermer ×
-            </button>
-            <span className="yg-kicker">DANS VOTRE ENTRETIEN</span>
-            {turns
-              .slice(
-                Math.max(0, turns.indexOf(turn) - 1),
-                turns.indexOf(turn) + 2,
-              )
-              .map((t) => (
-                <blockquote
-                  key={t.id}
-                  className={t.id === selected ? "yg-highlight" : ""}
-                >
-                  <small>
-                    {t.role === "user" ? "Vous" : scenario.personaName}
-                  </small>
+          <section className="yg-modal" role="dialog" aria-modal="true" aria-label="Extrait de l’entretien" onClick={(e) => e.stopPropagation()}>
+            <div className="yg-modal-head">
+              <p className="yg-kicker">Dans votre entretien</p>
+              <button className="yg-close" autoFocus onClick={() => setSelected(null)}>
+                Fermer
+              </button>
+            </div>
+            <div className="yg-excerpt">
+              {turns.slice(Math.max(0, index - 1), index + 2).map((t) => (
+                <div key={t.id} className={`yg-turn ${t.role === "user" ? "is-user" : ""} ${t.id === selected ? "is-focus" : ""}`}>
+                  <small>{t.role === "user" ? "Vous" : scenario.personaName}</small>
                   <p>{t.content}</p>
-                </blockquote>
+                </div>
               ))}
+            </div>
           </section>
         </div>
       )}
@@ -225,17 +240,16 @@ export default function Report({
   );
 }
 
-function Level({ score }: { score: number | null }) {
-  if (score === null)
-    return <span className="yg-level yg-level-none">Non observé</span>;
+function Gauge({ score }: { score: number | null }) {
   return (
-    <span className="yg-level" title={`${score} / 4`}>
-      <span className="yg-level-dots" aria-hidden="true">
-        {[1, 2, 3, 4].map((n) => (
-          <i key={n} className={n <= score ? "on" : ""} />
-        ))}
-      </span>
-      {LEVELS[score]}
+    <span
+      className={`yg-gauge ${score === 4 ? "is-top" : ""}`}
+      title={score === null ? "Non observé" : `${score} / 4`}
+      aria-label={score === null ? "Non observé" : `Niveau ${score} sur 4`}
+    >
+      {[1, 2, 3, 4].map((n) => (
+        <i key={n} className={score !== null && n <= score ? "on" : ""} />
+      ))}
     </span>
   );
 }
@@ -250,10 +264,7 @@ function NeedMap({
   center: string;
   onSelect: (turnId: string) => void;
 }) {
-  const W = 1000,
-    H = 460,
-    cx = W / 2,
-    cy = H / 2;
+  const W = 900, H = 460, cx = W / 2, cy = H / 2;
   const n = discovery.length;
   return (
     <svg
@@ -264,24 +275,20 @@ function NeedMap({
     >
       {discovery.map((d, i) => {
         const angle = -Math.PI / 2 + (i / n) * Math.PI * 2;
-        const x = cx + Math.cos(angle) * 250,
-          y = cy + Math.sin(angle) * 165;
-        const anchor =
-          Math.abs(Math.cos(angle)) < 0.2
-            ? "middle"
-            : Math.cos(angle) > 0
-              ? "start"
-              : "end";
-        const lx = x + (anchor === "start" ? 16 : anchor === "end" ? -16 : 0),
-          ly = y + (anchor === "middle" ? (Math.sin(angle) > 0 ? 28 : -18) : 5);
+        const x = cx + Math.cos(angle) * 240, y = cy + Math.sin(angle) * 170;
+        const anchor = Math.abs(Math.cos(angle)) < 0.2 ? "middle" : Math.cos(angle) > 0 ? "start" : "end";
+        const lx = x + (anchor === "start" ? 16 : anchor === "end" ? -16 : 0);
+        const ly = y + (anchor === "middle" ? (Math.sin(angle) > 0 ? 28 : -18) : 5);
+        const lines = wrap(d.theme);
         return (
           <g
             key={d.fact}
-            className={d.discovered ? "yg-map-on" : "yg-map-off"}
-            style={{ animationDelay: `${i * 90}ms` }}
+            className={d.discovered ? "is-on" : "is-off"}
+            style={{ animationDelay: `${i * 80}ms` }}
             onClick={() => d.turnId && onSelect(d.turnId)}
             tabIndex={d.turnId ? 0 : -1}
             role={d.turnId ? "button" : undefined}
+            aria-label={d.turnId ? `${d.theme} : retrouver la question` : undefined}
             onKeyDown={(e) => {
               if ((e.key === "Enter" || e.key === " ") && d.turnId) {
                 e.preventDefault();
@@ -290,28 +297,10 @@ function NeedMap({
             }}
           >
             <line x1={cx} y1={cy} x2={x} y2={y} />
-            <circle cx={x} cy={y} r={d.discovered ? 9 : 7} />
-            <text
-              x={lx}
-              y={
-                anchor === "middle" && Math.sin(angle) < 0
-                  ? ly - (wrap(d.theme).length - 1) * 16
-                  : ly
-              }
-              textAnchor={anchor}
-            >
-              {wrap(d.theme).map((line, j, all) => (
-                <tspan
-                  key={j}
-                  x={lx}
-                  dy={
-                    j === 0
-                      ? anchor === "middle"
-                        ? 0
-                        : -(all.length - 1) * 8
-                      : 16
-                  }
-                >
+            <circle cx={x} cy={y} r={d.discovered ? 8 : 6} />
+            <text x={lx} y={anchor === "middle" && Math.sin(angle) < 0 ? ly - (lines.length - 1) * 16 : ly} textAnchor={anchor}>
+              {lines.map((line, j, all) => (
+                <tspan key={j} x={lx} dy={j === 0 ? (anchor === "middle" ? 0 : -(all.length - 1) * 8) : 16}>
                   {line}
                 </tspan>
               ))}
@@ -319,7 +308,7 @@ function NeedMap({
           </g>
         );
       })}
-      <circle className="yg-map-core" cx={cx} cy={cy} r={62} />
+      <circle className="yg-map-core" cx={cx} cy={cy} r={60} />
       <text className="yg-map-core-text" x={cx} y={cy - 4} textAnchor="middle">
         {wrap(center, 14).map((line, j) => (
           <tspan key={j} x={cx} dy={j ? 19 : 0}>
@@ -344,43 +333,42 @@ function QuestionStrip({
   );
   const shown = hover !== null ? questions[hover] : null;
   return (
-    <section className="yg-questions">
-      <div className="yg-section-title">
+    <section className="yg-section">
+      <div className="yg-section-head">
         <h2>Vos questions, dans l’ordre</h2>
         <span>
-          {questions.length} question{questions.length > 1 ? "s" : ""} posée
-          {questions.length > 1 ? "s" : ""}
+          {questions.length} question{questions.length > 1 ? "s" : ""}
         </span>
       </div>
-      <div className="yg-question-strip">
+      <div className="yg-qline">
         {questions.map((q, i) => (
           <button
             key={i}
-            className={`yg-q yg-q-${q.kind}`}
+            className={`yg-q yg-q--${q.kind} ${hover === i ? "is-shown" : ""}`}
             onMouseEnter={() => setHover(i)}
             onFocus={() => setHover(i)}
             onMouseLeave={() => setHover(null)}
             onClick={() => onSelect(q.turnId)}
             aria-label={`Question ${i + 1}, ${KINDS[q.kind].label} : ${q.quote}`}
           >
-            <span>{i + 1}</span>
+            {String(i + 1).padStart(2, "0")}
           </button>
         ))}
       </div>
-      <p className="yg-question-quote">
+      <p className="yg-qquote">
         {shown ? (
           <>
-            « {shown.quote} » <em>{KINDS[shown.kind].label}</em>
+            « {shown.quote} »<em>{KINDS[shown.kind].label}</em>
           </>
         ) : (
-          "Survolez une question pour la relire."
+          <span className="yg-small">Survolez une question pour la relire, cliquez pour la retrouver.</span>
         )}
       </p>
-      <div className="yg-question-legend">
+      <div className="yg-qlegend">
         {counts.map(([k, c]) => (
-          <span key={k} className={`yg-k-${k}`}>
-            <i />
-            {KINDS[k].label} <strong>{c}</strong>
+          <span key={k}>
+            <i className={`yg-q--${k}`} />
+            {KINDS[k].label} <b>{c}</b>
             <small>{KINDS[k].hint}</small>
           </span>
         ))}
@@ -394,8 +382,7 @@ function wrap(text: string, width = 22) {
   const lines: string[] = [];
   for (const word of text.split(" ")) {
     const last = lines.at(-1);
-    if (last && (last + " " + word).length <= width)
-      lines[lines.length - 1] = last + " " + word;
+    if (last && (last + " " + word).length <= width) lines[lines.length - 1] = last + " " + word;
     else lines.push(word);
   }
   return lines;

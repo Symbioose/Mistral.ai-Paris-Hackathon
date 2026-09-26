@@ -1,16 +1,26 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/app/providers/AuthProvider";
 import Conversation from "./Conversation";
+import { Arrow, Footer, MicIcon, TopBar, initialsOf } from "./Chrome";
 import {
   api,
   type ScenarioCard,
   type Session,
   type SessionDetail,
+  type HistoryPage,
 } from "@/app/lib/conversation/types";
+
+const STATUS: Record<Session["status"], string> = {
+  completed: "Retour disponible",
+  evaluating: "Analyse en cours",
+  evaluation_failed: "Analyse à relancer",
+  active: "À reprendre",
+};
+
 export default function Workspace() {
-  const { profile, isAuthenticated, loading, isManager, signOut } = useAuth();
+  const { profile, isAuthenticated, loading, isManager } = useAuth();
   const [scenarios, setScenarios] = useState<ScenarioCard[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<ScenarioCard | null>(null);
@@ -19,16 +29,35 @@ export default function Workspace() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [mic, setMic] = useState("");
+  const [cursor, setCursor] = useState<HistoryPage["nextCursor"]>(null);
+  const loadMore = async () => {
+    if (!cursor) return;
+    setBusy(true);
+    try {
+      const data = await api<HistoryPage>(
+        `/api/simulation/sessions?${new URLSearchParams(cursor)}`,
+      );
+      setSessions((old) => [
+        ...old,
+        ...data.sessions.filter((s) => !old.some((o) => o.id === s.id)),
+      ]);
+      setCursor(data.nextCursor);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chargement impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
   const refresh = async () => {
     setError("");
     try {
       const [catalog, history] = await Promise.all([
         api<{ scenarios: ScenarioCard[] }>("/api/simulation/catalog"),
-        api<{ sessions: Session[] }>("/api/simulation/sessions"),
+        api<HistoryPage>("/api/simulation/sessions"),
       ]);
       setScenarios(catalog.scenarios);
       setSessions(history.sessions);
+      setCursor(history.nextCursor);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Chargement impossible.");
     } finally {
@@ -70,95 +99,47 @@ export default function Workspace() {
       setBusy(false);
     }
   };
-  const testMicrophone = async () => {
-    setMic("Vérification…");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const ctx = new AudioContext();
-      await ctx.resume();
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      source.connect(analyser);
-      setMic("Dites quelques mots…");
-      let peak = 0;
-      const samples = new Float32Array(analyser.fftSize);
-      const timer = setInterval(() => {
-        analyser.getFloatTimeDomainData(samples);
-        peak = Math.max(peak, ...samples.map(Math.abs));
-      }, 100);
-      setTimeout(() => {
-        clearInterval(timer);
-        stream.getTracks().forEach((t) => t.stop());
-        source.disconnect();
-        void ctx.close();
-        setMic(
-          peak > 0.005
-            ? "Votre microphone fonctionne."
-            : "Microphone autorisé, mais aucun son détecté. Vérifiez votre entrée audio.",
-        );
-      }, 2500);
-    } catch {
-      setMic(
-        "Autorisez le microphone dans votre navigateur, ou commencez par écrit.",
-      );
-    }
+  const goHome = () => {
+    setDetail(null);
+    setSelected(null);
+    void refresh();
   };
+
   if (loading)
     return (
-      <div className="yg-shell">
-        <div className="yg-loading">Votre espace se prépare…</div>
+      <div className="yg-app">
+        <div className="yg-loading">Préparation de votre espace…</div>
       </div>
     );
   if (!isAuthenticated)
     return (
-      <div className="yg-shell">
-        <Header />
-        <main className="yg-report">
-          <h1>
-            Retrouvons
-            <br />
-            <em>votre espace.</em>
-          </h1>
-          <p className="yg-lead">
-            Connectez-vous pour retrouver vos entraînements.
-          </p>
-          <Link className="yg-button" href="/">
-            Se connecter ↗
-          </Link>
+      <div className="yg-app">
+        <TopBar />
+        <main className="yg-page">
+          <div className="yg-empty">
+            <p className="yg-kicker">Session expirée</p>
+            <h1 className="yg-title">Retrouvons votre espace.</h1>
+            <p className="yg-small">
+              Connectez-vous avec les identifiants transmis par votre formateur.
+            </p>
+            <div>
+              <Link className="yg-btn" href="/">
+                Se connecter <Arrow />
+              </Link>
+            </div>
+          </div>
         </main>
       </div>
     );
-  return (
-    <div className="yg-shell">
-      <Header
-        right={
-          <>
-            <Link
-              href="/simulation"
-              onClick={(e) => {
-                e.preventDefault();
-                setDetail(null);
-                setSelected(null);
-                void refresh();
-              }}
-            >
-              Mon entraînement
-            </Link>
-            {isManager && <Link href="/studio">Studio pédagogique</Link>}
-            <button onClick={() => void signOut()} aria-label="Se déconnecter">
-              {profile?.full_name?.split(" ")[0] || "Mon compte"} <span>↗</span>
-            </button>
-          </>
-        }
-      />
-      {detail ? (
+
+  if (detail)
+    return (
+      <div className="yg-app">
+        <TopBar current="training" onHome={goHome} />
         <Conversation
           key={detail.session.id}
           initial={detail}
-          onBack={() => {
-            setDetail(null);
-            void refresh();
-          }}
+          onBack={goHome}
           onAgain={() => {
             const scenario = detail.scenario;
             setDetail(null);
@@ -167,311 +148,432 @@ export default function Workspace() {
             void refresh();
           }}
         />
-      ) : selected ? (
-        <main className="yg-brief yg-enter">
-          <button className="yg-link" onClick={() => setSelected(null)}>
-            ← Les entraînements
-          </button>
-          <div className="yg-eyebrow">
-            AVANT DE COMMENCER · {selected.durationMinutes} MIN ENVIRON
-          </div>
-          <h1>{selected.title}</h1>
-          <p className="yg-lead">{selected.brief}</p>
-          <div className="yg-brief-columns">
-            <section className="yg-paper">
-              <span className="yg-kicker">VOTRE INTERLOCUTEUR</span>
-              <div className="yg-persona-monogram">
-                {selected.personaName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </div>
-              <h2>{selected.personaName}</h2>
-              <p>{selected.personaRole}</p>
-              <hr />
-              <p>
-                Vous conduisez l’entretien. Prenez le temps de comprendre la
-                situation avant de construire une réponse.
-              </p>
-            </section>
-            <section className="yg-paper">
-              <span className="yg-kicker">INSTALLEZ-VOUS TRANQUILLEMENT</span>
-              <h2>Un espace pour pratiquer.</h2>
-              <p>
-                Vous pouvez hésiter, reformuler et faire une pause. Votre retour
-                vous attend à la fin de l’échange.
-              </p>
-              <label className="yg-field">
-                Module du parcours
-                <select
-                  value={moduleNumber}
-                  onChange={(e) => setModuleNumber(Number(e.target.value))}
-                >
-                  {selected.modules.map((m) => (
-                    <option value={m.number} key={m.number}>
-                      Module {m.number} · {m.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="yg-button yg-button-soft"
-                onClick={testMicrophone}
-              >
-                Vérifier mon microphone
-              </button>
-              {mic && (
-                <p className="yg-small" role="status">
-                  {mic}
-                </p>
-              )}
-              <p className="yg-small">
-                Un casque aide à éviter l’écho. Le mode écrit reste disponible.
-              </p>
-            </section>
-          </div>
-          {error && (
-            <p className="yg-error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="yg-brief-bottom">
-            <p>
-              Vos échanges seront conservés pour votre retour
-              <br />
-              et le suivi de votre progression par votre formateur.
-            </p>
-            <button className="yg-button" disabled={busy} onClick={begin}>
-              {busy ? "Préparation…" : "Rencontrer mon interlocuteur"}{" "}
-              <span>↗</span>
-            </button>
-          </div>
-        </main>
+      </div>
+    );
+
+  const firstName = profile?.full_name?.split(" ")[0];
+  const completed = sessions.filter((s) => s.status === "completed");
+  const last = sessions[0];
+  const main = scenarios[0];
+  return (
+    <div className="yg-app">
+      <TopBar current="training" onHome={goHome} />
+      {selected ? (
+        <Brief
+          scenario={selected}
+          moduleNumber={moduleNumber}
+          setModuleNumber={setModuleNumber}
+          busy={busy}
+          error={error}
+          onBack={() => setSelected(null)}
+          onBegin={begin}
+          attempts={sessions.filter((s) => s.scenario?.id === selected.id).length}
+        />
       ) : (
-        <main className="yg-home yg-enter">
-          <div className="yg-home-heading">
-            <div>
-              <div className="yg-eyebrow">VOTRE ESPACE D’ENTRAÎNEMENT</div>
-              <h1>
-                La confiance vient
-                <br />
-                <em>en pratiquant.</em>
-              </h1>
-              <p className="yg-lead">
-                Un vrai échange. Le droit d’essayer.
-                <br />
-                Des repères pour progresser, à votre rythme.
+        <main className="yg-page">
+          <div className="yg-hello">
+            <div className="yg-reveal" style={{ display: "grid", gap: 18 }}>
+              <p className="yg-kicker">
+                Votre espace d’entraînement
+                {isManager && (
+                  <>
+                    {" · "}
+                    <Link className="yg-link" href="/studio">
+                      Ouvrir le studio
+                    </Link>
+                  </>
+                )}
               </p>
+              <h1 className="yg-display">
+                {firstName ? `Bonjour ${firstName}.` : "Bonjour."}
+                <br />
+                <em>{completed.length ? "On reprend ?" : "On commence ?"}</em>
+              </h1>
             </div>
-            <div className="yg-progress-seal">
-              <span>VOTRE PARCOURS</span>
-              <strong>
-                {sessions
-                  .filter((s) => s.status === "completed")
-                  .length.toString()
-                  .padStart(2, "0")}
-              </strong>
-              <span>ENTRETIENS TERMINÉS</span>
+            <div className="yg-stats yg-reveal" aria-label="Votre activité">
+              <div className="yg-stat">
+                <strong>{String(completed.length).padStart(2, "0")}</strong>
+                <span>Entretiens analysés</span>
+              </div>
+              <div className="yg-stat">
+                <strong>
+                  {last
+                    ? new Date(last.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+                    : "—"}
+                </strong>
+                <span>Dernière séance</span>
+              </div>
             </div>
           </div>
+
+          {main && main.modules.length > 1 && (
+            <ol className="yg-track" style={{ "--steps": main.modules.length } as React.CSSProperties} aria-label="Parcours">
+              {main.modules.map((m) => {
+                const done = completed.some((s) => s.moduleNumber === m.number);
+                const current = (last?.moduleNumber || main.modules[0].number) === m.number;
+                return (
+                  <li key={m.number} className={current ? "is-current" : done ? "is-done" : ""}>
+                    <span>Module {m.number}</span>
+                    <strong>{m.title}</strong>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+
           {error && (
-            <div className="yg-error" role="alert">
-              {error}
+            <div className="yg-alert" role="alert" style={{ marginTop: 32 }}>
+              <span>{error}</span>
               <button className="yg-link" onClick={refresh}>
                 Réessayer
               </button>
             </div>
           )}
-          <div className="yg-section-title">
-            <h2>Votre prochain échange</h2>
-            <span>Découvrir le besoin · Relation client IT</span>
-          </div>
-          {!loaded ? (
-            <p>Chargement des entraînements…</p>
-          ) : scenarios.length === 0 ? (
-            <section className="yg-paper">
-              <h2>Votre prochain entretien se prépare.</h2>
-              <p>Votre formateur publiera ici le scénario de votre parcours.</p>
-              {isManager && (
-                <Link className="yg-button" href="/studio">
-                  Préparer le scénario ↗
-                </Link>
-              )}
-            </section>
-          ) : (
-            <div className="yg-scenarios">
-              {scenarios.map((s, i) => (
-                <button
-                  key={s.id}
-                  className="yg-scenario"
-                  onClick={() => {
-                    setSelected(s);
-                    setModuleNumber(s.modules[0]?.number || 1);
-                  }}
-                >
-                  <div className="yg-scenario-art">
-                    <div className="yg-art-orbit" />
-                    <span className="yg-art-index">0{i + 1}</span>
-                    <span className="yg-art-label">
-                      ÉCOUTER
-                      <br />
-                      COMPRENDRE
-                      <br />
-                      EXPLORER
-                    </span>
-                  </div>
-                  <div className="yg-scenario-body">
-                    <span className="yg-kicker">
-                      ENTRETIEN CLIENT · {s.durationMinutes} MIN
-                    </span>
-                    <h2>{s.title}</h2>
-                    <p>{s.brief}</p>
-                    <div>
-                      <span>Préparer mon entretien</span>
-                      <span className="yg-round-arrow">↗</span>
-                    </div>
-                  </div>
-                </button>
-              ))}
+
+          <section className="yg-section">
+            <div className="yg-section-head">
+              <h2>Votre prochain entretien</h2>
+              <span>{scenarios.length} scénario{scenarios.length > 1 ? "s" : ""} disponible{scenarios.length > 1 ? "s" : ""}</span>
             </div>
-          )}
-          <div className="yg-section-title">
-            <h2>Votre progression se construit ici</h2>
-            <span>Chaque tentative compte.</span>
-          </div>
-          {sessions.length === 0 ? (
-            <div className="yg-empty-history">
-              <span>01 →</span>
-              <div>
-                <h3>Tout commence par une conversation.</h3>
-                <p>
-                  Après votre premier entretien, retrouvez vos points d’appui et
-                  vos pistes de progression.
-                </p>
+            {!loaded ? (
+              <p className="yg-small">Chargement des entretiens…</p>
+            ) : scenarios.length === 0 ? (
+              <div className="yg-empty">
+                <h3 className="yg-h3">Votre prochain entretien se prépare.</h3>
+                <p className="yg-small">Votre formateur publiera ici le scénario de votre parcours.</p>
+                {isManager && (
+                  <div>
+                    <Link className="yg-btn" href="/studio">
+                      Préparer un scénario <Arrow />
+                    </Link>
+                  </div>
+                )}
               </div>
+            ) : (
+              <div style={{ display: "grid", gap: 20 }}>
+                {scenarios.map((s) => (
+                  <button
+                    key={s.id}
+                    className="yg-mission yg-reveal"
+                    onClick={() => {
+                      setSelected(s);
+                      setModuleNumber(last?.scenario?.id === s.id ? last.moduleNumber : s.modules[0]?.number || 1);
+                    }}
+                  >
+                    <figure className="yg-mission-stage">
+                      <span className="yg-kicker">
+                        <span className="yg-dot" /> Interlocuteur
+                      </span>
+                      <span className="yg-monogram" aria-hidden="true">
+                        {initialsOf(s.personaName)}
+                      </span>
+                      <figcaption>
+                        <strong>{s.personaName}</strong>
+                        <span>{s.personaRole}</span>
+                      </figcaption>
+                    </figure>
+                    <div className="yg-mission-body">
+                      <p className="yg-kicker">Entretien de découverte</p>
+                      <h3 className="yg-title">{s.title}</h3>
+                      <p className="yg-lead" style={{ fontSize: 16 }}>{s.brief}</p>
+                      <dl className="yg-meta">
+                        <div><dt>Durée</dt><dd>~{s.durationMinutes} min</dd></div>
+                        <div><dt>Modules</dt><dd>{s.modules.length}</dd></div>
+                        <div><dt>Tentatives</dt><dd>{sessions.filter((x) => x.scenario?.id === s.id).length}</dd></div>
+                      </dl>
+                      <div className="yg-mission-cta">
+                        <span className="yg-small">Préparation en 1 minute, micro ou clavier.</span>
+                        <span className="yg-btn">
+                          Préparer l’entretien <Arrow />
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="yg-section">
+            <div className="yg-section-head">
+              <h2>Votre progression</h2>
+              <span>Niveaux de 0 à 4 · même version du scénario</span>
             </div>
-          ) : (
-            <>
+            {sessions.length === 0 ? (
+              <div className="yg-empty">
+                <h3 className="yg-h3">Tout commence par une conversation.</h3>
+                <p className="yg-small">Après votre premier entretien, vos sept compétences apparaîtront ici, séance après séance.</p>
+              </div>
+            ) : (
               <Progress sessions={sessions} />
-              <div className="yg-history">
+            )}
+          </section>
+
+          {sessions.length > 0 && (
+            <section className="yg-section">
+              <div className="yg-section-head">
+                <h2>Historique</h2>
+                <span>{sessions.length} entretien{sessions.length > 1 ? "s" : ""}</span>
+              </div>
+              <div className="yg-ledger">
                 {sessions.map((s, i) => (
-                  <button key={s.id} disabled={busy} onClick={() => open(s.id)}>
-                    <span className="yg-history-index">
-                      {String(sessions.length - i).padStart(2, "0")}
-                    </span>
+                  <button key={s.id} className="yg-ledger-row" disabled={busy} onClick={() => open(s.id)}>
+                    <span>#{String(sessions.length - i).padStart(2, "0")}</span>
                     <span>
                       <strong>{s.scenario?.title || "Entretien client"}</strong>
                       <small>
                         Module {s.moduleNumber} ·{" "}
-                        {new Date(s.created_at).toLocaleDateString("fr-FR", {
-                          day: "numeric",
-                          month: "long",
-                        })}
+                        {new Date(s.created_at).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long" })}
                       </small>
                     </span>
                     <span className="yg-status">
-                      {s.status === "completed"
-                        ? "Voir mon retour"
-                        : s.status === "evaluating"
-                          ? "Analyse en cours"
-                          : s.status === "evaluation_failed"
-                            ? "Relancer l’analyse"
-                            : "Reprendre"}
+                      <span className={`yg-dot ${s.status === "completed" ? "yg-dot--ok" : ""}`} />
+                      {STATUS[s.status]}
                     </span>
-                    <span>↗</span>
+                    <Arrow />
                   </button>
                 ))}
               </div>
-            </>
+              {cursor && (
+                <div style={{ marginTop: 20 }}>
+                  <button className="yg-btn yg-btn--ghost" disabled={busy} onClick={loadMore}>
+                    Entretiens précédents
+                  </button>
+                </div>
+              )}
+            </section>
           )}
-          <footer className="yg-footer">
-            <span>YouGotIt · L’aisance se travaille.</span>
-            <span>EPITA Executive Education</span>
-          </footer>
         </main>
       )}
+      <Footer />
     </div>
   );
 }
-export function Header({ right }: { right?: React.ReactNode }) {
+
+function Brief({
+  scenario,
+  moduleNumber,
+  setModuleNumber,
+  busy,
+  error,
+  onBack,
+  onBegin,
+  attempts,
+}: {
+  scenario: ScenarioCard;
+  moduleNumber: number;
+  setModuleNumber: (n: number) => void;
+  busy: boolean;
+  error: string;
+  onBack: () => void;
+  onBegin: () => void;
+  attempts: number;
+}) {
   return (
-    <header className="yg-header">
-      <Link href="/" className="yg-brand">
-        YouGotIt<span>↗</span>
-      </Link>
-      <nav>
-        {right || (
-          <span className="yg-header-label">
-            L’ENTRAÎNEMENT QUI CHANGE LA CONVERSATION
-          </span>
-        )}
-      </nav>
-    </header>
+    <main className="yg-page">
+      <button className="yg-link" onClick={onBack}>
+        ← Retour à l’espace
+      </button>
+      <div className="yg-brief">
+        <aside className="yg-dossier yg-reveal">
+          <div className="yg-dossier-photo">
+            <span className="yg-kicker">Fiche interlocuteur</span>
+            <span className="yg-monogram" aria-hidden="true">{initialsOf(scenario.personaName)}</span>
+          </div>
+          <dl>
+            <div><dt>Nom</dt><dd>{scenario.personaName}</dd></div>
+            <div><dt>Fonction</dt><dd>{scenario.personaRole}</dd></div>
+            <div><dt>Durée</dt><dd>Environ {scenario.durationMinutes} minutes</dd></div>
+            <div><dt>Tentatives</dt><dd>{attempts ? `${attempts} déjà réalisée${attempts > 1 ? "s" : ""}` : "Première fois"}</dd></div>
+          </dl>
+        </aside>
+        <section className="yg-reveal">
+          <p className="yg-kicker">Avant d’entrer</p>
+          <h1 className="yg-title" style={{ marginTop: 14 }}>{scenario.title}</h1>
+          <ol className="yg-checklist">
+            <li>
+              <div>
+                <h2 className="yg-h3">La situation</h2>
+                <p className="yg-lead" style={{ fontSize: 16 }}>{scenario.brief}</p>
+                <p className="yg-small">
+                  C’est vous qui menez l’entretien. Votre interlocuteur ne dira pas tout spontanément :
+                  le besoin se découvre en posant des questions.
+                </p>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h2 className="yg-h3">Votre module</h2>
+                <div className="yg-modules" role="group" aria-label="Module du parcours">
+                  {scenario.modules.map((m) => (
+                    <button key={m.number} aria-pressed={m.number === moduleNumber} onClick={() => setModuleNumber(m.number)}>
+                      <span>{String(m.number).padStart(2, "0")}</span>
+                      {m.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h2 className="yg-h3">Votre micro</h2>
+                <MicCheck />
+                <p className="yg-small">Un casque évite l’écho. Vous pourrez aussi écrire à tout moment.</p>
+              </div>
+            </li>
+          </ol>
+          {error && <p className="yg-alert" role="alert" style={{ marginTop: 20 }}>{error}</p>}
+          <div className="yg-brief-go">
+            <p className="yg-small" style={{ maxWidth: "46ch" }}>
+              Vos échanges sont conservés pour votre retour et le suivi de votre progression par votre formateur.
+            </p>
+            <button className="yg-btn yg-btn--signal yg-btn--lg" disabled={busy} onClick={onBegin}>
+              {busy ? "Préparation de la salle…" : <>Entrer dans la salle <Arrow /></>}
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
-function Progress({ sessions }: { sessions: Session[] }) {
-  // Longitudinal view: completed attempts on the same scenario version, oldest first.
+
+/** Live microphone check: the learner sees their own voice move the meter before the interview. */
+function MicCheck() {
+  const [state, setState] = useState<"idle" | "listening" | "ok" | "silent" | "blocked">("idle");
+  const [level, setLevel] = useState(0);
+  const stop = useRef<() => void>(() => {});
+  useEffect(() => () => stop.current(), []);
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ctx = new AudioContext();
+      await ctx.resume();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      setState("listening");
+      const samples = new Float32Array(analyser.fftSize);
+      let peak = 0;
+      let frame = 0;
+      const tick = () => {
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const s of samples) sum += s * s;
+        const rms = Math.min(1, Math.sqrt(sum / samples.length) * 7);
+        peak = Math.max(peak, rms);
+        setLevel(rms);
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      const timer = setTimeout(() => finish(), 4000);
+      const finish = () => {
+        clearTimeout(timer);
+        cancelAnimationFrame(frame);
+        stream.getTracks().forEach((t) => t.stop());
+        source.disconnect();
+        void ctx.close();
+        setLevel(0);
+        setState(peak > 0.06 ? "ok" : "silent");
+      };
+      stop.current = finish;
+    } catch {
+      setState("blocked");
+    }
+  };
+  const message = {
+    idle: "Testez votre micro en disant quelques mots.",
+    listening: "Parlez normalement… « Bonjour, je suis ravi de vous rencontrer. »",
+    ok: "Parfait, on vous entend bien.",
+    silent: "Aucun son détecté. Vérifiez l’entrée audio de votre ordinateur.",
+    blocked: "Le navigateur bloque le micro. Autorisez-le dans la barre d’adresse, ou utilisez le clavier.",
+  }[state];
+  return (
+    <div className="yg-miccheck">
+      <button className="yg-btn yg-btn--ghost" onClick={start} disabled={state === "listening"}>
+        <MicIcon size={18} /> {state === "idle" ? "Tester" : "Refaire le test"}
+      </button>
+      <span className="yg-meter" aria-hidden="true">
+        {Array.from({ length: 14 }, (_, i) => (
+          <i key={i} className={level * 14 > i ? "on" : ""} style={{ height: 6 + i * 1.2 }} />
+        ))}
+      </span>
+      <span className="yg-small" role="status" style={{ color: state === "ok" ? "var(--good)" : undefined }}>
+        {message}
+      </span>
+    </div>
+  );
+}
+
+/** Skill × attempt matrix on comparable sessions (same scenario version, judge prompt and model). */
+export function Progress({ sessions, trainer = false }: { sessions: Session[]; trainer?: boolean }) {
   const completed = sessions.filter((s) => s.report).reverse();
   const latest = completed.at(-1);
-  if (!latest?.report) return null;
+  if (!latest?.report)
+    return (
+      <div className="yg-empty">
+        <p className="yg-small">
+          {trainer ? "Aucun rapport terminé pour l’instant." : "Terminez un entretien pour voir apparaître vos niveaux."}
+        </p>
+      </div>
+    );
   const series = completed
     .filter(
       (s) =>
         s.scenarioVersionId === latest.scenarioVersionId &&
-        s.evaluationMetadata?.promptVersion ===
-          latest.evaluationMetadata?.promptVersion &&
+        s.evaluationMetadata?.promptVersion === latest.evaluationMetadata?.promptVersion &&
         s.evaluationMetadata?.model === latest.evaluationMetadata?.model,
     )
     .slice(-6);
-  if (series.length < 2)
-    return (
-      <section className="yg-paper yg-progression">
-        <span className="yg-kicker">VOTRE PROGRESSION</span>
-        <p>
-          Votre premier retour est prêt. Dès votre deuxième entretien, vous
-          verrez ici l’évolution de chaque compétence.
-        </p>
-      </section>
-    );
   return (
-    <section className="yg-paper yg-progression">
-      <span className="yg-kicker">VOS COMPÉTENCES AU FIL DES ENTRETIENS</span>
-      <p className="yg-small">
-        Tentatives sur la même version du scénario et de l’évaluation, de la
-        plus ancienne à la plus récente. Chaque barre va de 0 à 4.
-      </p>
-      {latest.report.skills.map((skill) => {
-        const scores = series.map(
-          (s) =>
-            s.report?.skills.find((k) => k.key === skill.key)?.score ?? null,
-        );
-        const first = scores.find((x) => x !== null),
-          last = scores.at(-1);
-        const delta = first != null && last != null ? last - first : 0;
-        return (
-          <div key={skill.key} className="yg-progress-row">
-            <span>{skill.label}</span>
-            <div>
-              {series.map((s, i) => (
-                <span
-                  key={s.id}
-                  title={`Module ${s.moduleNumber} · ${new Date(s.created_at).toLocaleDateString("fr-FR")} : ${scores[i] ?? "non observé"}`}
-                >
-                  <i
-                    style={{
-                      height: scores[i] == null ? 3 : 6 + scores[i]! * 9,
-                      opacity: i === series.length - 1 ? 1 : 0.55,
-                    }}
-                  />
-                </span>
-              ))}
-            </div>
-            <strong className={delta > 0 ? "yg-up" : ""}>
-              {delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : "="}
-            </strong>
-          </div>
-        );
-      })}
-    </section>
+    <div className="yg-matrix">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Compétence</th>
+            {series.map((s, i) => (
+              <th scope="col" key={s.id}>
+                {i === series.length - 1 ? "Dernier" : `#${i + 1}`}
+                <br />
+                {new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+              </th>
+            ))}
+            <th scope="col">Évolution</th>
+          </tr>
+        </thead>
+        <tbody>
+          {latest.report.skills.map((skill) => {
+            const scores = series.map((s) => s.report?.skills.find((k) => k.key === skill.key)?.score ?? null);
+            const first = scores.find((x) => x !== null);
+            const lastScore = scores.at(-1);
+            const delta = series.length > 1 && first != null && lastScore != null ? lastScore - first : null;
+            return (
+              <tr key={skill.key}>
+                <th scope="row">{skill.label}</th>
+                {scores.map((score, i) => (
+                  <td key={series[i].id}>
+                    <span className="yg-cell" data-s={score ?? ""} title={score == null ? "Non observé" : `${score} / 4`}>
+                      {score ?? "·"}
+                    </span>
+                  </td>
+                ))}
+                <td>
+                  <span className={`yg-delta ${delta && delta > 0 ? "is-up" : ""}`}>
+                    {delta == null ? "—" : delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : "="}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {series.length < 2 && (
+        <p className="yg-small yg-matrix-note">
+          {trainer
+            ? "Un deuxième entretien comparable permettra de mesurer l’évolution."
+            : "Dès votre deuxième entretien, l’évolution de chaque compétence s’affichera ici."}
+        </p>
+      )}
+    </div>
   );
 }

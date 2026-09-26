@@ -11,7 +11,18 @@ import { publicScenario, validateConfig } from "@/app/lib/simulation/contracts";
 import { conversationModel } from "@/app/lib/simulation/models";
 export async function GET(req: Request) {
   try {
-    const cohort = new URL(req.url).searchParams.get("scope") === "cohort";
+    const search = new URL(req.url).searchParams;
+    const cohort = search.get("scope") === "cohort";
+    const before = search.get("before"),
+      beforeId = search.get("beforeId");
+    if (
+      (before || beforeId) &&
+      (!before ||
+        !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(before) ||
+        !Number.isFinite(Date.parse(before)) ||
+        !uuid(beforeId))
+    )
+      throw new HttpError(400, "Curseur de pagination invalide");
     const { client, admin, user } = await auth(cohort);
     let query = client.from("simulation_sessions").select("*");
     if (cohort) {
@@ -35,9 +46,15 @@ export async function GET(req: Request) {
         versions.map((v) => v.id),
       );
     } else query = query.eq("learner_id", user.id);
-    const { data, error } = await query
+    if (before && beforeId)
+      query = query.or(
+        `created_at.lt.${before},and(created_at.eq.${before},id.lt.${beforeId})`,
+      );
+    const { data: page, error } = await query
       .order("created_at", { ascending: false })
-      .limit(200);
+      .order("id", { ascending: false })
+      .limit(51);
+    const data = page?.slice(0, 50);
     dbError(error);
     if (!data?.length) return Response.json({ sessions: [] });
     const [
@@ -88,7 +105,14 @@ export async function GET(req: Request) {
           : null,
       };
     });
-    return Response.json({ sessions });
+    const last = data.at(-1)!;
+    return Response.json({
+      sessions,
+      nextCursor:
+        page!.length > 50
+          ? { before: last.created_at, beforeId: last.id }
+          : null,
+    });
   } catch (e) {
     return failure(e);
   }

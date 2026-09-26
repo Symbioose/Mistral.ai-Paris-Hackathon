@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Avatar, { type AvatarController, type AvatarMood } from "./Avatar";
 import Report from "./Report";
+import { Arrow, MicIcon } from "./Chrome";
 import { Listener, voiceProvider } from "@/app/lib/conversation/audio";
 import { api, type SessionDetail } from "@/app/lib/conversation/types";
 
@@ -32,12 +33,13 @@ export default function Conversation({
   const [listening, setListening] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [avatarReady, setAvatarReady] = useState(false);
-  const [tips, setTips] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [sound, setSound] = useState(false);
+  const [panel, setPanel] = useState<"transcript" | "tips" | null>(null);
+  const [writing, setWriting] = useState(false);
+  const [analysisSeconds, setAnalysisSeconds] = useState(0);
   const avatar = useRef<AvatarController | null>(null);
   const listener = useRef<Listener | null>(null);
   const audioAllowed = useRef(false);
@@ -70,6 +72,13 @@ export default function Conversation({
     };
   }, [detail.session.status, detail.session.id, detail.report]);
 
+  // Drives the analysis screen: the judge takes 20–50 s, the learner sees what is happening.
+  useEffect(() => {
+    if (!analysisPending) return;
+    setAnalysisSeconds(0);
+    const timer = setInterval(() => setAnalysisSeconds((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [analysisPending]);
   useEffect(() => {
     alive.current = true;
     void voiceProvider();
@@ -82,7 +91,7 @@ export default function Conversation({
   }, []);
   useEffect(() => {
     scroll.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [reply, detail.turns, transcript]);
+  }, [reply, detail.turns, panel]);
   useEffect(() => {
     if (phase !== "live") return;
     const started = Date.now() - elapsed * 1000;
@@ -295,6 +304,7 @@ export default function Conversation({
     setSound(true);
     if (avatar.current) void avatar.current.speaker.context.resume();
     if (withMic) await startListening();
+    else setWriting(true);
   };
   const toggleSound = () => {
     const next = !audioAllowed.current;
@@ -353,357 +363,311 @@ export default function Conversation({
       ? [...detail.turns].reverse().find((t) => t.role === "assistant")?.content
       : "");
   const learnerTurns = detail.turns.filter((t) => t.role === "user").length;
-  const minutes = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  const minutes = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+  const name = firstName(detail.scenario.personaName);
   const state = analysisPending
-    ? "Analyse de votre entretien"
+    ? "Analyse en cours"
     : speaking
-      ? `${firstName(detail.scenario.personaName)} vous répond`
+      ? `${name} parle`
       : busy
-        ? `${firstName(detail.scenario.personaName)} réfléchit`
+        ? `${name} réfléchit`
         : connecting
-          ? "Connexion du microphone"
+          ? "Connexion du micro"
           : partial
-            ? "Je vous écoute…"
+            ? "Vous parlez"
             : listening
-              ? "À vous, je vous écoute"
-              : avatarReady
-                ? "Prêt à vous écouter"
-                : "Préparation de l’entretien";
+              ? "À vous · micro ouvert"
+              : phase === "intro"
+                ? avatarReady ? "Prêt" : "Préparation"
+                : "Micro coupé";
+  const step = Math.min(ANALYSIS.length - 1, Math.floor(analysisSeconds / 9));
 
   return (
-    <main className="yg-conversation yg-enter">
-      <div className="yg-conversation-top">
-        <button
-          className="yg-link"
-          onClick={() => {
-            stopListening();
-            interrupt();
-            onBack();
-          }}
-        >
-          ← Quitter, je reprendrai plus tard
-        </button>
-        <span>
-          MODULE {detail.session.moduleNumber || 1} <i />{" "}
-          {phase === "live" ? (
-            <>
-              ENTRETIEN · {minutes}
-              <small> / ~{detail.scenario.durationMinutes} min</small>
-            </>
-          ) : (
-            "AVANT DE COMMENCER"
-          )}
-        </span>
-        <button
-          className="yg-link"
-          disabled={busy || evaluating || learnerTurns === 0}
-          onClick={() => setConfirmEnd(true)}
-        >
-          Terminer l’entretien ↗
-        </button>
-      </div>
-      <div
-        className={`yg-room ${phase === "intro" ? "yg-room-intro" : ""} ${speaking ? "yg-room-speaking" : ""} ${partial ? "yg-room-listening" : ""}`}
-      >
-        <div className="yg-room-light" />
-        <div className="yg-room-grid" />
-        <div className="yg-persona-label">
-          <span className="yg-live-dot" />
-          {detail.scenario.personaName}
-          <small>{detail.scenario.personaRole}</small>
+    <main className={`yg-stage ${speaking ? "is-speaking" : ""} ${writing && phase === "live" && canTalk ? "is-writing" : ""}`} aria-label={`Entretien avec ${detail.scenario.personaName}`}>
+      <Avatar
+        onReady={(controller) => {
+          avatar.current = controller;
+          const prior = controller.speaker.onPlaying;
+          controller.speaker.onPlaying = (p) => {
+            prior(p);
+            setSpeaking(p);
+            if (p) controller.react("speaking");
+          };
+          controller.speaker.onError = (e) => setError(e);
+          setAvatarReady(true);
+        }}
+        onError={setError}
+      />
+
+      <div className="yg-stage-bar">
+        <div className="yg-persona">
+          <strong>
+            <span className={`yg-dot ${speaking ? "yg-dot--live" : ""}`} />
+            {detail.scenario.personaName}
+          </strong>
+          <span>{detail.scenario.personaRole}</span>
         </div>
-        <Avatar
-          onReady={(controller) => {
-            avatar.current = controller;
-            const prior = controller.speaker.onPlaying;
-            controller.speaker.onPlaying = (p) => {
-              prior(p);
-              setSpeaking(p);
-              if (p) controller.react("speaking");
-            };
-            controller.speaker.onError = (e) => setError(e);
-            setAvatarReady(true);
-          }}
-          onError={setError}
-        />
-        {phase === "intro" ? (
-          <div className="yg-start">
-            <span className="yg-kicker">VOUS CONDUISEZ L’ENTRETIEN</span>
-            <p>
-              {firstName(detail.scenario.personaName)} vous attend.
-              Présentez-vous,
-              <br />
-              puis laissez votre client raconter la situation.
-            </p>
-            <button
-              className="yg-button"
-              disabled={!avatarReady}
-              onClick={() => void begin(true)}
-            >
-              {avatarReady ? (
-                <>
-                  Commencer à l’oral <span>↗</span>
-                </>
-              ) : (
-                "Préparation…"
-              )}
+        <div className="yg-rec" aria-label="Durée de l’entretien">
+          {phase === "live" ? <span className="yg-dot yg-dot--live" /> : <span className="yg-dot" style={{ background: "var(--stage-mute)" }} />}
+          <time>{minutes}</time>
+          <span>/ ~{detail.scenario.durationMinutes} min · Module {detail.session.moduleNumber || 1}</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="yg-stage-alert" role="alert">
+          <span>{error}</span>
+          {detail.session.status === "evaluation_failed" && !evaluating ? (
+            <button onClick={evaluate}>Relancer l’analyse</button>
+          ) : (
+            <button onClick={() => setError("")} aria-label="Fermer le message">×</button>
+          )}
+        </div>
+      )}
+
+      {phase === "intro" ? (
+        <div className="yg-cue">
+          <p className="yg-kicker">Vous conduisez l’entretien</p>
+          <p>
+            {name} vous attend. Présentez-vous, puis invitez {name} à raconter la situation.
+          </p>
+          <div className="yg-cue-actions">
+            <button className="yg-btn yg-btn--signal yg-btn--lg" disabled={!avatarReady} onClick={() => void begin(true)}>
+              {avatarReady ? <><MicIcon size={18} /> Commencer à l’oral</> : "Préparation de la salle…"}
             </button>
-            <button className="yg-link" onClick={() => void begin(false)}>
+            <button className="yg-btn yg-btn--ghost yg-btn--lg" disabled={!avatarReady} onClick={() => void begin(false)}>
               Je préfère écrire
             </button>
           </div>
-        ) : (
-          <div className="yg-caption" aria-live="polite">
-            {analysisPending ? (
-              <>
-                <span className="yg-kicker">VOTRE ENTRETIEN EST CONSERVÉ</span>
-                <p>
-                  Nous relisons vos échanges
-                  <br />
-                  pour préparer un retour précis.
-                </p>
-                <div className="yg-dots">
-                  <i />
-                  <i />
-                  <i />
-                </div>
-              </>
-            ) : partial ? (
-              <>
-                <span className="yg-kicker">VOUS</span>
-                <p className="yg-caption-learner">{partial}</p>
-              </>
-            ) : pending && !reply ? (
-              <>
-                <span className="yg-kicker">VOUS</span>
-                <p className="yg-caption-learner">{pending}</p>
-                <div className="yg-dots">
-                  <i />
-                  <i />
-                  <i />
-                </div>
-              </>
-            ) : lastReply ? (
-              <>
-                <span className="yg-kicker">
-                  {detail.scenario.personaName.toUpperCase()}
-                </span>
-                <p>« {lastReply} »</p>
-              </>
-            ) : (
-              <>
-                <span className="yg-kicker">À VOUS D’OUVRIR L’ÉCHANGE</span>
-                <p>
-                  Présentez-vous, puis invitez votre client
-                  <br />à vous raconter la situation.
-                </p>
-              </>
-            )}
-          </div>
-        )}
-        <div className="yg-room-state">
-          <span className={speaking || listening ? "yg-live-dot" : ""} />
-          {state}
         </div>
-      </div>
-      {error && (
-        <div className="yg-error" role="alert">
-          <span>{error}</span>
-          {detail.session.status === "evaluation_failed" && !evaluating && (
-            <button className="yg-link" onClick={evaluate}>
-              Relancer l’analyse ↗
-            </button>
+      ) : (
+        <div className="yg-subtitle" aria-live="polite">
+          {partial ? (
+            <>
+              <span className="yg-kicker">Vous</span>
+              <p className="is-learner">{partial}</p>
+            </>
+          ) : pending && !reply ? (
+            <>
+              <span className="yg-kicker">Vous</span>
+              <p className="is-learner">{pending}</p>
+              <span className="yg-typing" aria-label={`${name} réfléchit`}><i /><i /><i /></span>
+            </>
+          ) : lastReply ? (
+            <>
+              <span className="yg-kicker">{detail.scenario.personaName}</span>
+              <p>{lastReply}</p>
+            </>
+          ) : (
+            <>
+              <span className="yg-kicker">À vous d’ouvrir l’échange</span>
+              <p>Présentez-vous, puis invitez votre interlocuteur à raconter la situation.</p>
+            </>
           )}
         </div>
       )}
+
+      {phase === "live" && writing && canTalk && (
+        <form
+          className="yg-compose"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send(input);
+          }}
+        >
+          <input
+            autoFocus
+            aria-label="Votre message"
+            placeholder={`Écrivez à ${name}…`}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            maxLength={6000}
+          />
+          <button disabled={!input.trim()}>Envoyer</button>
+        </form>
+      )}
+
       {phase === "live" && (
-        <>
-          <div className="yg-controls">
-            <button
-              className={`yg-mic ${listening ? "yg-mic-active" : ""}`}
-              disabled={connecting || !canTalk}
-              onClick={startListening}
-              aria-pressed={listening}
-            >
-              <span ref={meter} className="yg-mic-meter" aria-hidden="true" />
-              <Mic />
-              {listening
-                ? "Couper le micro"
-                : connecting
-                  ? "Connexion…"
-                  : "Activer le micro"}
-            </button>
+        <div className="yg-console">
+          <div className="yg-console-side">
+            <span className="yg-state" role="status">
+              <span className={`yg-dot ${listening || speaking ? "yg-dot--live" : ""}`} style={listening || speaking ? undefined : { background: "var(--stage-mute)" }} />
+              {state}
+            </span>
             {speaking && (
-              <button className="yg-button yg-button-soft" onClick={interrupt}>
-                Prendre la parole
+              <button className="yg-tool" onClick={interrupt}>
+                Interrompre
               </button>
             )}
             {partial && (
-              <button
-                className="yg-button yg-button-soft"
-                onClick={() => listener.current?.flush()}
-              >
-                J’ai terminé ↗
+              <button className="yg-tool" onClick={() => listener.current?.flush()}>
+                J’ai terminé
               </button>
             )}
           </div>
-          <form
-            className="yg-compose"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send(input);
-            }}
+          <button
+            className={`yg-mic ${listening ? "is-on" : ""}`}
+            disabled={connecting || !canTalk}
+            onClick={startListening}
+            aria-pressed={listening}
+            aria-label={listening ? "Couper le micro" : "Activer le micro"}
           >
-            <input
-              aria-label="Votre message"
-              placeholder={
-                listening
-                  ? "Parlez, ou écrivez ici…"
-                  : "Écrivez votre message ici…"
-              }
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              maxLength={6000}
-              disabled={!canTalk}
-            />
-            <button
-              aria-label="Envoyer le message"
-              disabled={!input.trim() || !canTalk}
-            >
-              ↗
+            <span ref={meter} className="yg-mic-ring" aria-hidden="true" />
+            <MicIcon />
+            <span className="yg-mic-label">{listening ? "Micro ouvert" : connecting ? "Connexion…" : "Parler"}</span>
+          </button>
+          <div className="yg-console-side">
+            <button className="yg-tool" aria-pressed={writing} onClick={() => setWriting(!writing)} disabled={!canTalk}>
+              <KeyboardIcon /> <span className="yg-tool-label">Écrire</span>
             </button>
-          </form>
-          <div className="yg-aside-links">
-            <button
-              className="yg-link"
-              onClick={() => setTranscript(!transcript)}
-            >
-              {transcript ? "Masquer" : "Afficher"} les échanges (
-              {detail.turns.length})
+            <button className="yg-tool" aria-pressed={panel === "transcript"} onClick={() => setPanel(panel === "transcript" ? null : "transcript")}>
+              <TextIcon /> <span className="yg-tool-label">Échanges · {learnerTurns}</span>
             </button>
-            <button className="yg-link" onClick={() => setTips(!tips)}>
-              {tips ? "Masquer" : "Afficher"} l’aide-mémoire
-            </button>
-            <button
-              className="yg-link"
-              onClick={toggleSound}
-              aria-pressed={sound}
-            >
-              {sound ? "Couper la voix" : "Activer la voix"}
-            </button>
-          </div>
-          {detail.session.status !== "active" && !detail.report && (
-            <section className="yg-paper">
-              <p>
-                Votre entretien est terminé et conservé. Vous pouvez retrouver
-                ou relancer son analyse.
-              </p>
-              <button
-                className="yg-link"
-                disabled={evaluating}
-                onClick={evaluate}
-              >
-                Retrouver mon retour ↗
+            {(detail.scenario.learnerHints || []).length > 0 && (
+              <button className="yg-tool" aria-pressed={panel === "tips"} onClick={() => setPanel(panel === "tips" ? null : "tips")}>
+                <HintIcon /> <span className="yg-tool-label">Aide</span>
               </button>
-            </section>
-          )}
-          {tips && (
-            <section className="yg-tips yg-paper" aria-label="Aide-mémoire">
-              <span className="yg-kicker">
-                AIDE-MÉMOIRE · PISTES À EXPLORER
-              </span>
-              <ul>
-                {(detail.scenario.learnerHints || []).map(
-                  ({ title, example }) => (
-                    <li key={title}>
-                      <strong>{title}</strong>
-                      <span>{example}</span>
-                    </li>
-                  ),
-                )}
-              </ul>
-            </section>
-          )}
-          {transcript && (
-            <section
-              className="yg-transcript"
-              aria-label="Transcription de l’entretien"
-            >
-              {detail.turns.map((t) => (
-                <article
-                  key={t.id}
-                  className={t.role === "user" ? "yg-turn-user" : ""}
-                >
-                  <small>
-                    {t.role === "user"
-                      ? "VOUS"
-                      : detail.scenario.personaName.toUpperCase()}
-                  </small>
-                  <p>{t.content}</p>
-                </article>
-              ))}
-              {pending && (
-                <article className="yg-turn-user">
-                  <small>VOUS</small>
-                  <p>{pending}</p>
-                </article>
-              )}
-              {reply && (
-                <article>
-                  <small>{detail.scenario.personaName.toUpperCase()}</small>
-                  <p>{reply}</p>
-                </article>
-              )}
-              <div ref={scroll} />
-            </section>
-          )}
-        </>
+            )}
+            <button className="yg-tool" aria-pressed={!sound} onClick={toggleSound} aria-label={sound ? "Couper la voix" : "Activer la voix"}>
+              {sound ? <SoundIcon /> : <MuteIcon />}
+            </button>
+            {detail.session.status === "active" ? (
+              <button className="yg-tool yg-tool--end" disabled={busy || evaluating || learnerTurns === 0} onClick={() => setConfirmEnd(true)}>
+                Terminer
+              </button>
+            ) : (
+              !detail.report && (
+                <button className="yg-tool yg-tool--end" disabled={evaluating} onClick={evaluate}>
+                  Voir mon retour
+                </button>
+              )
+            )}
+          </div>
+        </div>
       )}
+
+      {panel && (
+        <aside className="yg-drawer" aria-label={panel === "tips" ? "Aide-mémoire" : "Transcription"}>
+          <div className="yg-drawer-head">
+            <div className="yg-drawer-tabs">
+              <button aria-pressed={panel === "transcript"} onClick={() => setPanel("transcript")}>Échanges</button>
+              {(detail.scenario.learnerHints || []).length > 0 && (
+                <button aria-pressed={panel === "tips"} onClick={() => setPanel("tips")}>Aide-mémoire</button>
+              )}
+            </div>
+            <button className="yg-close" onClick={() => setPanel(null)}>Fermer</button>
+          </div>
+          <div className="yg-drawer-body">
+            {panel === "tips" ? (
+              <>
+                <p className="yg-small">Des pistes, pas un script. Formulez avec vos mots.</p>
+                {(detail.scenario.learnerHints || []).map(({ title, example }) => (
+                  <div className="yg-hint" key={title}>
+                    <strong>{title}</strong>
+                    <span>{example}</span>
+                  </div>
+                ))}
+              </>
+            ) : detail.turns.length === 0 && !pending ? (
+              <p className="yg-small">Vos échanges apparaîtront ici au fil de l’entretien.</p>
+            ) : (
+              <>
+                {detail.turns.map((t) => (
+                  <div key={t.id} className={`yg-turn ${t.role === "user" ? "is-user" : ""}`}>
+                    <small>{t.role === "user" ? "Vous" : detail.scenario.personaName}</small>
+                    <p>{t.content}</p>
+                  </div>
+                ))}
+                {pending && (
+                  <div className="yg-turn is-user"><small>Vous</small><p>{pending}</p></div>
+                )}
+                {reply && (
+                  <div className="yg-turn"><small>{detail.scenario.personaName}</small><p>{reply}</p></div>
+                )}
+                <div ref={scroll} />
+              </>
+            )}
+          </div>
+        </aside>
+      )}
+
+      {analysisPending && (
+        <div className="yg-analysis" role="status" aria-live="polite">
+          <div className="yg-analysis-card">
+            <p className="yg-kicker" style={{ color: "var(--stage-mute)" }}>
+              <span className="yg-dot yg-dot--live" /> Votre entretien est conservé
+            </p>
+            <h2>Nous relisons vos échanges.</h2>
+            <p className="yg-small" style={{ color: "var(--stage-mute)" }}>Ce que l’analyse examine :</p>
+            <ol>
+              {ANALYSIS.map((label, i) => (
+                <li key={label} className={i < step ? "is-done" : i === step ? "is-active" : ""}>
+                  <span>{String(i + 1).padStart(2, "0")}</span>
+                  <span>{label}</span>
+                  <span aria-hidden="true">{i === step ? "···" : ""}</span>
+                </li>
+              ))}
+            </ol>
+            <div className="yg-analysis-bar"><i style={{ width: `${Math.min(95, (analysisSeconds / 45) * 100)}%` }} /></div>
+            <p className="yg-small" style={{ color: "var(--stage-mute)" }}>
+              Environ une demi-minute. Chaque observation s’appuiera sur vos propres mots.
+            </p>
+          </div>
+        </div>
+      )}
+
       {confirmEnd && (
-        <div className="yg-modal-backdrop">
-          <section
-            className="yg-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="end-title"
-          >
-            <span className="yg-kicker">PRENDRE DU RECUL</span>
-            <h2 id="end-title">Prêt à découvrir votre retour ?</h2>
-            <p>
-              Votre entretien sera terminé et conservé. Nous analyserons votre
-              démarche, avec des exemples tirés de vos échanges. Cela prend une
-              trentaine de secondes.
+        <div className="yg-modal-backdrop" onClick={() => setConfirmEnd(false)}>
+          <section className="yg-modal" role="dialog" aria-modal="true" aria-labelledby="end-title" onClick={(e) => e.stopPropagation()}>
+            <p className="yg-kicker">Fin de l’entretien</p>
+            <h2 id="end-title" className="yg-title">Prêt à découvrir votre retour ?</h2>
+            <p className="yg-lead" style={{ fontSize: 16 }}>
+              L’entretien sera clôturé et conservé. Vous recevrez une analyse de votre démarche,
+              illustrée par vos propres phrases.
             </p>
             <div className="yg-modal-actions">
-              <button className="yg-button" autoFocus onClick={evaluate}>
-                Terminer et analyser ↗
+              <button className="yg-btn yg-btn--signal" autoFocus onClick={evaluate}>
+                Terminer et analyser <Arrow />
               </button>
-              <button className="yg-link" onClick={() => setConfirmEnd(false)}>
+              <button className="yg-btn yg-btn--ghost" onClick={() => setConfirmEnd(false)}>
                 Continuer l’entretien
               </button>
             </div>
           </section>
         </div>
       )}
+
+      <button
+        className="yg-tool"
+        style={{ position: "absolute", zIndex: 4, top: 64, left: "clamp(16px, 3vw, 32px)", paddingLeft: 0 }}
+        onClick={() => {
+          stopListening();
+          interrupt();
+          onBack();
+        }}
+      >
+        ← Quitter · reprendre plus tard
+      </button>
     </main>
   );
 }
 
+const ANALYSIS = [
+  "Relecture complète de l’entretien",
+  "Repérage de vos questions",
+  "Carte du besoin découvert",
+  "Rédaction de votre retour",
+];
+
 const firstName = (name: string) => name.split(" ")[0];
 
-function Mic() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      aria-hidden="true"
-    >
-      <rect x="9" y="2" width="6" height="13" rx="3" />
-      <path d="M5 10v2a7 7 0 0014 0v-2M12 19v3M8 22h8" />
-    </svg>
-  );
-}
+const Icon = ({ d }: { d: string }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+const KeyboardIcon = () => <Icon d="M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10" />;
+const TextIcon = () => <Icon d="M4 6h16M4 12h16M4 18h10" />;
+const HintIcon = () => <Icon d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z" />;
+const SoundIcon = () => <Icon d="M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12" />;
+const MuteIcon = () => <Icon d="M4 9v6h4l5 4V5L8 9zM17 9l5 6M22 9l-5 6" />;

@@ -65,3 +65,8 @@ export async function api<T>(url: string, body?: unknown): Promise<T> {
     );
   return data as T;
 }
+
+export interface HistoryPage {
+  sessions: Session[];
+  nextCursor?: { before: string; beforeId: string } | null;
+}
