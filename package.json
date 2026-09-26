@@ -6,9 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node scripts/vendor-avatar.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "eval:judge": "node --env-file=.env.local --import tsx scripts/evaluate-simulation.ts",
+    "seed": "node --env-file=.env.local --import tsx scripts/seed-simulation.ts",
+    "simulate": "node --env-file=.env.local --import tsx scripts/simulate-conversation.ts",
+    "test:e2e": "node --env-file=.env.local node_modules/@playwright/test/cli.js test",
+    "check:avatar": "node scripts/check-avatar.mjs"
   },
   "dependencies": {
+    "@met4citizen/talkinghead": "^1.7.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
     "framer-motion": "^12.34.3",
@@ -16,18 +24,24 @@
     "openai": "^6.25.0",
     "pdf-parse": "^2.4.5",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "three": "^0.180.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.186.0",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "prettier": "^3.9.9",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

@@ -7,7 +7,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Run on all routes except static assets and _next internals
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Public avatar/audio modules need no session refresh. Avoid an auth round trip per asset.
+    "/((?!_next/static|_next/image|favicon.ico|avatar/|audio/|vendor/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
